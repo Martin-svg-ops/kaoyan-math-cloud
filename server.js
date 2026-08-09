@@ -70,7 +70,8 @@ function scheduleGitSync() {
       execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
       try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); }
       catch (_) { /* 无变更，跳过 */ return; }
-      execSync('git push ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
+      // Render 环境是 detached HEAD，需显式 push 当前 HEAD 到远程 master 分支
+      execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 15000 });
       console.log('[git-sync] 数据已同步到 GitHub');
     } catch (e) {
       console.error('[git-sync] 同步失败：', String(e.message || e).slice(0, 200));
@@ -661,7 +662,7 @@ async function handleApi(req, res, url) {
       try { out.commitOut = String(execSync('git commit -m "data: debug" 2>&1', { cwd: ROOT, timeout: 8000 })).trim().slice(0, 300); out.steps.push('committed'); }
       catch (e) { out.commitOut = String(e.stdout || e.message || '').trim().slice(0, 300); out.steps.push('commit failed'); }
       out.steps.push('git push...');
-      try { out.pushOut = String(execSync('git push ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 })).trim().slice(0, 300); out.steps.push('PUSH OK'); }
+      try { out.pushOut = String(execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 15000 })).trim().slice(0, 300); out.steps.push('PUSH OK'); }
       catch (e) { out.pushOut = String(e.stdout || e.stderr || e.message || '').trim().slice(0, 400); out.steps.push('PUSH FAIL'); }
     } catch (e) {
       out.error = String(e.message || e).slice(0, 400);
