@@ -183,39 +183,48 @@ function extractJson(s) {
   return null;
 }
 
-// 本地文本预过滤：用 PDF 文本层信息直接判断，无需调 AI。
-// 返回 true 表示明显不是题目（应过滤），false 表示需要 AI 进一步判断。
-function localTextFilter(text) {
-  if (!text) return false; // 无文本（可能是图片型 PDF），交给 AI
+// 本地文本三级分类：
+// 返回 true  = 确定是题目（无需 AI）
+// 返回 false = 确定不是题目（无需 AI）
+// 返回 null  = 拿不准，需要 AI 视觉判断
+function localTextClassify(text) {
+  if (!text) return null; // 无文本（图片型 PDF），交给 AI
   const t = String(text).trim();
-  if (!t) return true; // 空文本
+  if (!t) return false; // 空文本
   const cjk = (t.match(/[一-龥]/g) || []).length;
-  // 纯数字（页码）
-  if (/^[0-9\s]+$/.test(t)) return true;
-  // 纯页码/页眉
-  if (/^第\s*\d+\s*页/.test(t)) return true;
-  // 极短且几乎无汉字
-  if (t.length < 8 && cjk < 2) return true;
-  // 图注/表注（短文本）
-  if (/^(图|表)\s*\d/.test(t) && t.length < 22) return true;
-  // 解答延续
-  if (/^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t)) return true;
-  if (/^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t)) return true;
-  return false;
+  // ── 确定噪声 ──
+  if (/^[0-9\s]+$/.test(t)) return false;
+  if (/^第\s*\d+\s*页/.test(t)) return false;
+  if (t.length < 8 && cjk < 2) return false;
+  if (/^(图|表)\s*\d/.test(t) && t.length < 22) return false;
+  if (/^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t)) return false;
+  if (/^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t)) return false;
+  // ── 确定是题目 ──
+  if (cjk >= 8 && t.length >= 20) return true;
+  if (/^(求|设|证明|证 |已知|若 |计算|讨论|确定|判断|试 |试求|试证|求极限|求导|求积分|证明:|证明：|设函数|设数列)/.test(t) && cjk >= 4) return true;
+  if (/[?？]/.test(t) && cjk >= 4) return true;
+  if (/^(填空题|选择题|判断题|证明题|计算题|解答题)/.test(t)) return true;
+  // ── 拿不准 ──
+  return null;
 }
 
-async function classifyOne(im, model, apiKey) {
-  // 本地文本预过滤：省掉 AI 调用，大幅提速
-  if (localTextFilter(im.text)) {
-    return { id: im.id, isQuestion: false, isBlank: true, number: null, chapter: null, type: 'solve', confidence: 1, localFilter: true };
+// 把多张图片合并到一次 API 调用中统一判断（提速核心：1 次网络往返替代 N 次）
+async function classifyBatch(images, model, apiKey) {
+  // 构造 content 数组：交替插入标签和图片
+  const content = [];
+  for (let i = 0; i < images.length; i++) {
+    content.push({ type: 'text', text: `[${i + 1}]` });
+    content.push({ type: 'image_url', image_url: { url: images[i].dataUrl } });
   }
-  const prompt =
-    '判断这张图片是否是一道完整的数学题目。只回答JSON：' +
-    '{"isQuestion": true/false, "isBlank": true/false, "number": "题号或null", "confidence": 0-1}。' +
-    '空白页、页眉页脚、页码、图注、广告水印、纯公式碎片、解答延续 → isQuestion=false。' +
-    '完整的数学题目（含题干） → isQuestion=true。';
+  content.push({
+    type: 'text',
+    text: `以上${images.length}张图片（编号[1]到[${images.length}]），逐张判断是不是完整数学题目。
+只输出JSON: {"items":[{"i":1,"q":true,"b":false},...]}
+q=true表示是题目，q=false不是题目；b=true是空白/碎片；i对应编号。`
+  });
+
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
+  const timer = setTimeout(() => ctrl.abort(), 30000);
   let resp;
   try {
     resp = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
@@ -223,13 +232,7 @@ async function classifyOne(im, model, apiKey) {
       headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: im.dataUrl } }
-          ]
-        }],
+        messages: [{ role: 'user', content }],
         response_format: { type: 'json_object' }
       }),
       signal: ctrl.signal
@@ -238,33 +241,67 @@ async function classifyOne(im, model, apiKey) {
     clearTimeout(timer);
   }
   const data = await resp.json().catch(() => ({}));
-  let result = extractJson(data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content);
-  if (!result || typeof result !== 'object') result = { isQuestion: true, isBlank: false, confidence: 0 };
-  result.id = im.id;
-  result.isQuestion = result.isQuestion !== false;
-  result.isBlank = !!result.isBlank;
-  result.number = result.number && String(result.number).trim() ? String(result.number).trim() : null;
-  result.confidence = typeof result.confidence === 'number' ? Math.min(1, Math.max(0, result.confidence)) : 0.5;
-  return result;
+  const raw = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch (e) {}
+  if (!parsed || !Array.isArray(parsed.items)) {
+    parsed = extractJson(raw);
+    if (!parsed || !Array.isArray(parsed && parsed.items)) {
+      // 解析失败：全部保留（降级）
+      return images.map((im, i) => ({ id: im.id, isQuestion: true, isBlank: false, confidence: 0, parseError: true }));
+    }
+  }
+  const items = parsed.items || [];
+  return images.map((im, i) => {
+    const item = (items[i] !== undefined) ? items[i] : {};
+    return {
+      id: im.id,
+      isQuestion: item.q !== false,
+      isBlank: !!item.b,
+      number: null,
+      confidence: 0.5,
+      aiBatch: true
+    };
+  });
 }
 
 async function handleAiClassify(req, res) {
   const b = await readBody(req);
-  const images = Array.isArray(b.images) ? b.images : [];
-  if (!images.length) return sendJSON(res, 400, { error: 'no images' });
+  const allImages = Array.isArray(b.images) ? b.images : [];
+  if (!allImages.length) return sendJSON(res, 400, { error: 'no images' });
   const apiKey = process.env.DASHSCOPE_API_KEY;
   if (!apiKey) return sendJSON(res, 500, { error: 'DASHSCOPE_API_KEY not set' });
   const model = process.env.DASHSCOPE_MODEL || 'qwen-vl-plus';
-  const CONC = 8; // 并发上限
-  const results = [];
-  for (let i = 0; i < images.length; i += CONC) {
-    const batch = images.slice(i, i + CONC);
-    const settled = await Promise.all(batch.map((im) =>
-      classifyOne(im, model, apiKey).catch((e) => ({ id: im.id, isQuestion: true, isBlank: false, confidence: 0, error: String(e && e.message || e) }))
-    ));
-    results.push(...settled);
+
+  // 1) 本地文本分类：确定的直接处理，拿不准的才发 AI
+  const localResults = [];
+  const needAi = [];
+  for (const im of allImages) {
+    const local = localTextClassify(im.text);
+    if (local === false) {
+      localResults.push({ id: im.id, isQuestion: false, isBlank: true, confidence: 1, local: 'noise' });
+    } else if (local === true) {
+      localResults.push({ id: im.id, isQuestion: true, isBlank: false, confidence: 1, local: 'question' });
+    } else {
+      needAi.push(im);
+    }
   }
-  return sendJSON(res, 200, { results });
+
+  // 2) 需要 AI 的图片：每批最多 6 张合并一次调用
+  const BATCH = 6;
+  const aiResults = [];
+  for (let i = 0; i < needAi.length; i += BATCH) {
+    const batch = needAi.slice(i, i + BATCH);
+    try {
+      const r = await classifyBatch(batch, model, apiKey);
+      aiResults.push(...r);
+    } catch (e) {
+      // 单个批次失败：此批全部降级保留
+      aiResults.push(...batch.map((im) => ({ id: im.id, isQuestion: true, isBlank: false, confidence: 0, error: String(e && e.message || e) })));
+    }
+  }
+
+  return sendJSON(res, 200, { results: [...localResults, ...aiResults] });
 }
 
 /* ---------- API 路由 ---------- */
