@@ -649,22 +649,22 @@ async function handleApi(req, res, url) {
     try {
       const token = process.env.GIT_TOKEN;
       const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
-      out.steps.push('git config...');
       execSync('git config user.email "sync@kaoyan-math.local"', { cwd: ROOT });
       execSync('git config user.name "KaoyanMathSync"', { cwd: ROOT });
+      out.branch = String(execSync('git rev-parse --abbrev-ref HEAD', { cwd: ROOT })).trim();
+      out.status = String(execSync('git status --short', { cwd: ROOT })).trim().slice(0, 300);
+      out.userCount = db.users.length;
       out.steps.push('git add...');
       execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
+      out.statusAfterAdd = String(execSync('git status --short', { cwd: ROOT })).trim().slice(0, 300);
       out.steps.push('git commit...');
-      try { execSync('git commit -m "data: debug"', { cwd: ROOT, timeout: 8000 }); out.steps.push('committed'); }
-      catch (_) { out.steps.push('nothing to commit'); return sendJSON(res, 200, out); }
+      try { out.commitOut = String(execSync('git commit -m "data: debug" 2>&1', { cwd: ROOT, timeout: 8000 })).trim().slice(0, 300); out.steps.push('committed'); }
+      catch (e) { out.commitOut = String(e.stdout || e.message || '').trim().slice(0, 300); out.steps.push('commit failed'); }
       out.steps.push('git push...');
-      const pushOut = execSync('git push ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
-      out.steps.push('PUSH OK: ' + String(pushOut).slice(0, 200));
+      try { out.pushOut = String(execSync('git push ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 })).trim().slice(0, 300); out.steps.push('PUSH OK'); }
+      catch (e) { out.pushOut = String(e.stdout || e.stderr || e.message || '').trim().slice(0, 400); out.steps.push('PUSH FAIL'); }
     } catch (e) {
       out.error = String(e.message || e).slice(0, 400);
-      out.status = String(e.status || '');
-      out.stdout = String(e.stdout || '').slice(0, 200);
-      out.stderr = String(e.stderr || '').slice(0, 400);
     }
     return sendJSON(res, 200, out);
   }
