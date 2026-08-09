@@ -36,10 +36,10 @@
   <script src="vendor/mathjax/tex-svg.js" id="MathJax-script" async></script>
   <script src="vendor/pako.min.js"></script>
   <script type="module" src="vendor/pdf-loader.mjs"></script>
-  <script src="data/880数一基础篇.js"></script>
-  <script src="data/gaoshu_jichu.js"></script>
-  <script src="data/gaoshu_zonghe.js"></script>
-  <script src="data/gaoshu_tuozhan.js"></script>
+  <script src="data/880数一基础篇.js?v=36"></script>
+  <script src="data/gaoshu_jichu.js?v=36"></script>
+  <script src="data/gaoshu_zonghe.js?v=36"></script>
+  <script src="data/gaoshu_tuozhan.js?v=36"></script>
 </head>
 <body>
   <div class="app">
@@ -84,17 +84,10 @@
   </div>
   <dialog class="modal" id="modal"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=36"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=35').then(function(reg) {
-          console.log('[PWA] Service Worker 已注册', reg.scope);
-        }).catch(function(err) {
-          console.warn('[PWA] Service Worker 注册失败', err);
-        });
-      });
-    }
+    /* 已关闭 service worker 离线缓存，避免旧缓存导致新题库不显示。
+       如需离线能力，请改回注册并同步升级 sw.js 的 CACHE_NAME。 */
   </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /* 研数工坊 Service Worker — 离线缓存核心资源 */
-const CACHE_NAME = 'kaoyan-math-v35';
+const CACHE_NAME = 'kaoyan-math-v36';
 const CORE_ASSETS = [
   './',
   './index.html',
