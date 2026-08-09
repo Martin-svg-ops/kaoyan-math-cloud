@@ -2389,11 +2389,12 @@
     if (opts.showScore) html += '<span class="q-score">(' + score + '分)</span>';
     html += '</div>';
     html += '<div class="q-stem-text">' + stemMedia(q) + '</div>';
-    if (q.options && q.options.length) {
+    // 有原书裁图时，题目与自带选项已在图片内，导出不再重复列出选项
+    if (q.options && q.options.length && !q.img) {
       html += '<div class="q-options">';
       var labels = 'ABCDEFGH';
       for (var i = 0; i < q.options.length; i++) {
-        html += '<div class="q-opt"><span class="opt-label">' + labels[i] + '.</span> ' + (q.img ? '' : mathHTML(q.options[i])) + '</div>';
+        html += '<div class="q-opt"><span class="opt-label">' + labels[i] + '.</span> ' + mathHTML(q.options[i]) + '</div>';
       }
       html += '</div>';
     }
@@ -2431,6 +2432,7 @@
     html += '.q-score { font-size:11px; color:#5f6b7a; }';
     html += '.q-stem-text { margin:4px 0 6px; font-size:13px; }';
     html += '.q-stem-text .math-render { display:inline; }';
+    html += '.q-stem-text img { display:block; max-width:100%; height:auto; margin:2px 0; background:#fff; }';
     html += '.q-options { margin:4px 0 4px 20px; }';
     html += '.q-opt { margin:2px 0; font-size:13px; }';
     html += '.opt-label { font-weight:bold; margin-right:4px; }';
