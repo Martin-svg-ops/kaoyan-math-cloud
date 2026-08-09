@@ -482,12 +482,16 @@
       { id: 'bank_total', name: '总题库', createdAt: now },
       { id: 'bank_sample', name: '示例题库', createdAt: now }
     ];
-    if (typeof window !== 'undefined' && window.__preloadedBank880 && window.__preloadedBank880.questions && window.__preloadedBank880.questions.length) {
-      const pre = window.__preloadedBank880;
-      const preBank = pre.bank || { id: 'bank_880', name: '880数一基础篇', createdAt: now };
-      banks.push(preBank);
-      pre.questions.forEach((q) => {
-        bankWithIds.push(Object.assign({}, q, { bankId: preBank.id }));
+    if (typeof window !== 'undefined') {
+      PRELOADED_BANK_KEYS.forEach((key) => {
+        const pre = window[key];
+        if (pre && pre.questions && pre.questions.length) {
+          const preBank = pre.bank || { id: 'bank_preloaded', name: '预置题库', createdAt: now };
+          if (!banks.some((b) => b.id === preBank.id)) banks.push(preBank);
+          pre.questions.forEach((q) => {
+            bankWithIds.push(Object.assign({}, q, { bankId: preBank.id }));
+          });
+        }
       });
     }
     return {
@@ -508,7 +512,7 @@
           { id: 'bank_sample', name: '示例题库', createdAt: now }
         ];
     const bank = (Array.isArray(d && d.bank) ? d.bank : [])
-      .filter((q) => q && q.id && q.stem)
+      .filter((q) => q && q.id && (q.stem || q.img))
       .map((q) => Object.assign({}, q, { bankId: q.bankId || 'bank_total' }));
     return {
       banks: banks,
@@ -519,19 +523,29 @@
     };
   }
 
+  const PRELOADED_BANK_KEYS = [
+    '__preloadedBank880',
+    '__preloadedBankGaoshuJichu',
+    '__preloadedBankGaoshuZonghe',
+    '__preloadedBankGaoshuTuozhan'
+  ];
+
   function ensurePreloadedBank(data) {
-    if (typeof window === 'undefined' || !window.__preloadedBank880 || !data) return data;
-    const pre = window.__preloadedBank880;
-    const preBank = pre.bank || { id: 'bank_880', name: '880数一基础篇' };
-    if (!data.banks.some((b) => b.id === preBank.id)) {
-      data.banks.push(preBank);
-    }
-    const ids = new Set(data.bank.map((q) => q.id));
-    (pre.questions || []).forEach((q) => {
-      if (!ids.has(q.id)) {
-        data.bank.push(Object.assign({}, q, { bankId: preBank.id }));
-        ids.add(q.id);
+    if (typeof window === 'undefined' || !data) return data;
+    PRELOADED_BANK_KEYS.forEach((key) => {
+      const pre = window[key];
+      if (!pre || !pre.questions || !pre.questions.length) return;
+      const preBank = pre.bank || { id: 'bank_preloaded', name: '预置题库' };
+      if (!data.banks.some((b) => b.id === preBank.id)) {
+        data.banks.push(preBank);
       }
+      const ids = new Set(data.bank.map((q) => q.id));
+      (pre.questions || []).forEach((q) => {
+        if (!ids.has(q.id)) {
+          data.bank.push(Object.assign({}, q, { bankId: preBank.id }));
+          ids.add(q.id);
+        }
+      });
     });
     return data;
   }
