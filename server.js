@@ -95,8 +95,11 @@ function isUserId(id) { return typeof id === 'string' && id.length > 0; }
 
 function effectiveBank(user) {
   const deleted = new Set(user.deletedIds || []);
-  const added = (user.added || []).map((q) => Object.assign({}, q));
-  const base = BASE.questions.filter((q) => !deleted.has(q.id));
+  const deletedBanks = new Set(user.deletedBankIds || []);
+  // 如果基础题库被标记为已删除，不返回任何基础题
+  const base = deletedBanks.has(BASE.bankMeta.id) ? [] : BASE.questions.filter((q) => !deleted.has(q.id));
+  // 过滤掉属于已删除题库的用户新增题目
+  const added = (user.added || []).filter((q) => !deletedBanks.has(q.bankId)).map((q) => Object.assign({}, q));
   return base.concat(added);
 }
 function publicUser(u) {
@@ -372,10 +375,46 @@ async function handleApi(req, res, url) {
 
   // 当前用户的有效题库
   if (p === '/api/bank' && method === 'GET') {
-    return sendJSON(res, 200, {
-      banks: [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }],
-      bank: effectiveBank(me)
+    me.deletedBankIds = me.deletedBankIds || [];
+    const deletedSet = new Set(me.deletedBankIds);
+    // 从用户新增题目中提取非删除的自定义题库
+    const customBanks = [];
+    const seen = new Set();
+    (me.added || []).forEach(q => {
+      if (q.bankId && q.bankId !== BASE.bankMeta.id && !deletedSet.has(q.bankId) && !seen.has(q.bankId)) {
+        seen.add(q.bankId);
+        customBanks.push({ id: q.bankId, name: q.bankName || q.bankId });
+      }
     });
+    const banks = [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }, ...customBanks];
+    return sendJSON(res, 200, {
+      banks: banks,
+      bank: effectiveBank(me),
+      deletedBankIds: me.deletedBankIds || []
+    });
+  }
+
+  // 删除整个题库（标记该题库为已删除，移除其中所有题目）
+  const mBankDel = p.match(/^\/api\/bank\/(.+)$/);
+  if (mBankDel && method === 'DELETE') {
+    const bankId = decodeURIComponent(mBankDel[1]);
+    me.deletedBankIds = me.deletedBankIds || [];
+    if (!me.deletedBankIds.includes(bankId)) me.deletedBankIds.push(bankId);
+    // 移除该题库中用户新增的题目
+    if (bankId !== BASE.bankMeta.id) {
+      me.added = (me.added || []).filter(q => q.bankId !== bankId);
+    } else {
+      // 删除基础题库：标记所有基础题 ID 为已删除
+      BASE.bank.forEach(q => {
+        if (!(me.deletedIds || []).includes(q.id)) {
+          me.deletedIds = me.deletedIds || [];
+          me.deletedIds.push(q.id);
+        }
+      });
+      me.added = (me.added || []).filter(q => q.bankId !== BASE.bankMeta.id);
+    }
+    saveDB();
+    return sendJSON(res, 200, { ok: true });
   }
 
   // 新增题目

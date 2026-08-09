@@ -598,12 +598,14 @@
     '__preloadedBankGaoshuTuozhan'
   ];
 
-  function ensurePreloadedBank(data) {
+  function ensurePreloadedBank(data, deletedSet) {
     if (typeof window === 'undefined' || !data) return data;
     PRELOADED_BANK_KEYS.forEach((key) => {
       const pre = window[key];
       if (!pre || !pre.questions || !pre.questions.length) return;
       const preBank = pre.bank || { id: 'bank_preloaded', name: '预置题库' };
+      // 如果该预置题库已被标记为删除（云端模式），跳过
+      if (deletedSet && deletedSet.has(preBank.id)) return;
       if (!data.banks.some((b) => b.id === preBank.id)) {
         data.banks.push(preBank);
       }
@@ -3589,27 +3591,40 @@
       confirmModal('删除题库模块', '将删除该题库模块及其全部题目，试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', btn.dataset.bankid);
     } else if (action === 'delete-bank-confirm') {
       const bankId = btn.dataset.param;
-      state.bank = state.bank.filter((q) => q.bankId !== bankId);
-      // 从所有错题本中移除该题库的题目
-      (state.wrongBooks || []).forEach(function(wb) {
-        wb.entries = (wb.entries || []).filter(function(w) {
-          var q = qById(w.qid);
-          return !q || q.bankId !== bankId;
+      const doDeleteLocal = function() {
+        state.bank = state.bank.filter((q) => q.bankId !== bankId);
+        (state.wrongBooks || []).forEach(function(wb) {
+          wb.entries = (wb.entries || []).filter(function(w) {
+            var q = qById(w.qid);
+            return !q || q.bankId !== bankId;
+          });
         });
-      });
-      state.papers.forEach((p) => {
-        p.qids = (p.qids || []).filter((x) => {
-          const q = qById(x);
-          return !q || q.bankId !== bankId;
+        state.papers.forEach((p) => {
+          p.qids = (p.qids || []).filter((x) => {
+            const q = qById(x);
+            return !q || q.bankId !== bankId;
+          });
         });
-      });
-      state.banks = state.banks.filter((b) => b.id !== bankId);
-      if (imgBankIds.has(bankId)) { idbDeleteBank(bankId).catch(function () {}); imgBankIds.delete(bankId); }
-      if (bankFilter.bank === bankId) bankFilter.bank = 'all';
-      if (group.bank === bankId) group.bank = 'all';
-      if (group.listBank === bankId) group.listBank = 'all';
-      saveData();
-      closeModal();
+        state.banks = state.banks.filter((b) => b.id !== bankId);
+        if (imgBankIds.has(bankId)) { idbDeleteBank(bankId).catch(function () {}); imgBankIds.delete(bankId); }
+        if (bankFilter.bank === bankId) bankFilter.bank = 'all';
+        if (group.bank === bankId) group.bank = 'all';
+        if (group.listBank === bankId) group.listBank = 'all';
+        saveData();
+        closeModal();
+        toast('题库已删除');
+        render();
+      };
+      if (auth.active) {
+        API.deleteBank(auth.token, bankId).then(function() {
+          doDeleteLocal();
+        }).catch(function(e) {
+          toast('服务器删除失败：' + ((e && e.message) || e) + '，已从本地移除');
+          doDeleteLocal();
+        });
+      } else {
+        doDeleteLocal();
+      }
       toast('题库模块已删除');
       render();
     } else if (action === 'delete-question') {
@@ -4075,6 +4090,7 @@
     me: function (token) { return this._req('GET', '/api/me', null, token); },
     logout: function (token) { return this._req('POST', '/api/logout', null, token); },
     bank: function (token) { return this._req('GET', '/api/bank', null, token); },
+    deleteBank: function (token, bankId) { return this._req('DELETE', '/api/bank/' + encodeURIComponent(bankId), null, token); },
     addQuestion: function (token, q) { return this._req('POST', '/api/questions', q, token); },
     updateQuestion: function (token, id, q) { return this._req('PUT', '/api/questions/' + encodeURIComponent(id), q, token); },
     deleteQuestion: function (token, id) { return this._req('DELETE', '/api/questions/' + encodeURIComponent(id), null, token); },
@@ -4090,8 +4106,12 @@
     const d = await API.bank(auth.token);
     state.banks = d.banks;
     state.bank = d.bank;
-    // 云端返回的题库可能不包含本地预置题库，合并回去，避免登录后 880/高数篇等预置题库消失
-    ensurePreloadedBank(state);
+    // 跳过已被服务器标记为已删除的题库，避免重新合并被删题库
+    if (d.deletedBankIds && d.deletedBankIds.length) {
+      ensurePreloadedBank(state, new Set(d.deletedBankIds));
+    } else {
+      ensurePreloadedBank(state);
+    }
     // 加载云端错题本（合并到本地，云端优先）
     try {
       const wbResp = await API.wrongBooks(auth.token);
