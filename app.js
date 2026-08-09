@@ -586,11 +586,90 @@
       storageSet(LS_KEY, JSON.stringify(copy));
       return;
     }
-    const ok = storageSet(LS_KEY, JSON.stringify(state));
+    // 图片题库的题目（含 dataURL）存 IndexedDB，这里从 localStorage 副本中剔除，避免超出 5MB 配额
+    const copy = Object.assign({}, state);
+    if (imgBankIds.size) {
+      copy.bank = state.bank.filter((q) => !imgBankIds.has(q.bankId));
+    }
+    const ok = storageSet(LS_KEY, JSON.stringify(copy));
     if (!ok) toast('当前浏览器不支持本地存储，数据仅在本次打开期间有效');
   }
 
+  /* ===== 用户图片题库持久化（IndexedDB，避免 localStorage 5MB 配额被图片撑爆）===== */
+  const USER_BANK_DB = 'kaoyan-user-banks';
+  const imgBankIds = new Set(); // 哪些 bankId 的图片存放在 IndexedDB
+  let _idb = null;
+  function openUserBankDB() {
+    return new Promise((resolve, reject) => {
+      if (_idb) return resolve(_idb);
+      if (!('indexedDB' in window)) return reject(new Error('no-indexeddb'));
+      let req;
+      try { req = indexedDB.open(USER_BANK_DB, 1); } catch (e) { return reject(e); }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('banks')) db.createObjectStore('banks', { keyPath: 'id' });
+      };
+      req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbPutBank(rec) {
+    const db = await openUserBankDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('banks', 'readwrite');
+      tx.objectStore('banks').put(rec);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function idbGetBank(id) {
+    const db = await openUserBankDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('banks', 'readonly');
+      const r = tx.objectStore('banks').get(id);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+  }
+  async function idbGetAllBanks() {
+    const db = await openUserBankDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('banks', 'readonly');
+      const r = tx.objectStore('banks').getAll();
+      r.onsuccess = () => resolve(r.result || []);
+      r.onerror = () => reject(r.error);
+    });
+  }
+  async function idbDeleteBank(id) {
+    const db = await openUserBankDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('banks', 'readwrite');
+      tx.objectStore('banks').delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  // 启动时把 IndexedDB 中的图片题库合并回内存 state（刷新后不丢）
+  async function loadUserBanksIntoState() {
+    try {
+      const recs = await idbGetAllBanks();
+      if (!recs.length) return;
+      recs.forEach((rec) => {
+        imgBankIds.add(rec.id);
+        if (!state.banks.some((b) => b.id === rec.id)) {
+          state.banks.push({ id: rec.id, name: rec.name, createdAt: rec.createdAt, userBank: true, imgBank: true });
+        }
+        const ids = new Set(state.bank.map((q) => q.id));
+        (rec.questions || []).forEach((q) => { if (!ids.has(q.id)) { state.bank.push(q); ids.add(q.id); } });
+      });
+      render();
+    } catch (e) {
+      console.warn('读取本地图片题库失败', e);
+    }
+  }
+
   let state = loadData();
+  loadUserBanksIntoState();
   let view = 'browse';
   let timerHandle = null;
   let toastTimer = null;
@@ -935,11 +1014,12 @@
       <div class="upload-zone" id="uploadZone">
         ${icon('upload')}
         <h3>上传题库文件</h3>
-        <p>拖拽文件到此处，或点击选择文件；支持 JSON、CSV、可复制文字的 PDF，上传后可为题库设置名称</p>
+        <p>拖拽文件到此处，或点击选择文件；支持 PDF（自动裁切为题目图片）、JSON、CSV，上传后可自定义题库名称并本机保存</p>
         <div class="upload-meta">
           <button class="btn btn-primary" data-action="pick-bank-file" type="button">选择文件</button>
           <input type="file" id="uploadFile" accept=".json,.csv,.pdf,application/json,text/csv,application/pdf" style="display:none">
         </div>
+        <div id="pdfCropStatus" class="hint" style="margin-top:10px;display:none"></div>
         ${location.protocol === 'file:' ? '<div class="hint" style="margin-top:10px">直接打开本页时 PDF 识别能力有限，建议运行 server.py 后通过本地地址使用完整识别。</div>' : ''}
       </div>`;
   }
@@ -948,6 +1028,7 @@
     const ok = uploadParsed.questions.length;
     const errs = uploadParsed.errors.length;
     const isPdf = /\.pdf$/i.test(uploadParsed.name || '');
+    const isImage = !!uploadParsed.isImage;
     return `
       <div class="upload-summary">
         <div class="field" style="margin:0 0 12px">
@@ -959,8 +1040,9 @@
           <span class="badge ${errs ? 'badge-orange' : 'badge-green'}">有效 ${ok} 题${errs ? ' · 跳过 ' + errs + ' 条' : ''}</span>
         </div>
         <div class="upload-summary-body">
+          ${isImage ? '<div class="hint" style="margin-top:0">PDF 已自动裁切为题目图片（与离线一致），并在本机保存，刷新后不会丢失。可在上方为题库命名后入库。</div>' : ''}
           ${isPdf ? '<div class="hint" style="margin-top:0">PDF 已自动提取文字并识别题目，入库前请核对题型、选项和答案。</div>' : ''}
-          ${uploadParsed.questions.slice(0, 5).map((q) => `<div class="hint" style="margin-top:0">${typeBadge(q.type)} <strong>${esc(q.chapter)}</strong> · ${esc(q.stem)}</div>`).join('')}
+          ${uploadParsed.questions.slice(0, 8).map((q) => `<div class="hint" style="margin-top:0;display:flex;gap:10px;align-items:flex-start"><div style="flex:0 0 110px">${stemMedia(q, 'q-img q-img-thumb')}</div><div style="flex:1">${typeBadge(q.type)} <strong>${esc(q.number || '')}</strong> · ${esc(q.chapter)}</div></div>`).join('')}
           ${uploadParsed.questions.length > 5 ? '<div class="hint">…共 ' + uploadParsed.questions.length + ' 道题</div>' : ''}
           ${isPdf && !uploadParsed.questions.length && uploadParsed.preview ? '<div class="hint" style="max-height:200px;overflow:auto;white-space:pre-wrap">未识别出题目，以下是提取到的文本：\n' + esc(uploadParsed.preview.slice(0, 1600)) + '</div>' : ''}
           ${errs ? '<div class="hint" style="border-color:rgba(220,38,38,.35)">' + uploadParsed.errors.map(esc).join('<br>') + '</div>' : ''}
@@ -1463,23 +1545,34 @@
     uploadParsed = null;
   }
 
+  function setUploadStatus(msg) {
+    const el = document.getElementById('pdfCropStatus');
+    if (!el) return;
+    if (msg) { el.textContent = msg; el.style.display = 'block'; }
+    else { el.style.display = 'none'; }
+  }
+
   async function handleBankFile(file) {
     if (!file) return;
     if (/\.pdf$/i.test(file.name)) {
       try {
         const buffer = await file.arrayBuffer();
-        let extracted = await extractPdfViaServer(file);
-        if (!extracted) extracted = await extractPdfText(new Uint8Array(buffer));
-        if (!extracted.trim()) {
-          toast('PDF 未能提取文字，可能为扫描件或加密文件');
+        setUploadStatus('正在识别并裁切 PDF 题目图片，请稍候（0%）…');
+        const u8 = new Uint8Array(buffer);
+        const res = await extractPdfImages(u8, (cur, total) => {
+          setUploadStatus('正在识别并裁切 PDF 题目图片，请稍候（' + Math.round(cur / total * 100) + '%）…');
+        });
+        setUploadStatus('');
+        if (!res.questions.length) {
+          toast('未能从 PDF 中识别出带题号的题目，请确认是带题号的排版 PDF');
           return;
         }
-        const parsed = parsePdfText(extracted);
-        uploadParsed = { name: file.name, questions: parsed.questions, errors: parsed.errors, preview: extracted, bankName: '' };
+        uploadParsed = { name: file.name, questions: res.questions, errors: res.errors, isImage: true, bankName: '' };
         render();
       } catch (e) {
-        console.warn('PDF 解析失败', e);
-        toast('PDF 解析失败，请检查文件是否损坏');
+        setUploadStatus('');
+        console.warn('PDF 图片裁切失败', e);
+        toast('PDF 图片裁切失败：' + ((e && e.message) || e));
       }
       return;
     }
@@ -1693,6 +1786,174 @@
     if (/解答|计算题|证明题|简答/.test(line)) return 'solve';
     if (/选择/.test(line)) return 'single';
     return null;
+  }
+
+  /* ===== PDF → 题目图片裁切管线（浏览器内用 pdf.js 完成，效果与离线 Python 管线一致）===== */
+  const WATERMARK_KEYS = ['防止', '转卖', '小坏蛋', '免费获取', 'nocode', 'http', '公众号'];
+  const CROP_SCALE = 2;      // 渲染缩放
+  const CROP_MAXW = 1000;    // 裁切后最大宽度（px），超出等比缩小
+  const CROP_PAD = 6;        // 去白边留白
+
+  // 把 pdf.js 的 textContent.items 转成带包围盒的词（PDF 坐标，y 向上）
+  function pdfItemsToBoxes(items) {
+    const out = [];
+    items.forEach((it) => {
+      if (!it.str) return;
+      const e = it.transform[4];
+      const f = it.transform[5];
+      const w = it.width || 0;
+      const h = Math.abs(it.height || it.transform[3] || 9);
+      out.push({ text: it.str, x0: e, x1: e + w, y0: f - 2, y1: f + h });
+    });
+    // 按阅读顺序（上→下、左→右）排序，便于顺次推断题型
+    out.sort((a, b) => (b.y1 - a.y1) || (a.x0 - b.x0));
+    return out;
+  }
+
+  // 在原始 item 上检测题号：左括号 item（x0<140）紧跟纯数字 item 即为一题
+  // （pdf.js 常把 "(1)" 拆成多个 item，且整行会被合并成巨型 token，故不能用整词正则）
+  function detectMarkers(boxes) {
+    const markers = [];
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      const isOpen = b.text === '(' || b.text === '（';
+      if (!isOpen || b.x0 >= 140) continue;
+      const nxt = boxes[i + 1];
+      if (nxt && Math.abs(nxt.y1 - b.y1) < 4) {
+        const digits = nxt.text.replace(/[）).、]/g, '').trim();
+        if (/^\d{1,2}$/.test(digits)) {
+          markers.push({ num: parseInt(digits, 10), y0: b.y0, y1: b.y1 });
+          i++; // 跳过数字 item
+        }
+      }
+    }
+    return markers;
+  }
+
+  // 去除图片四周白边（允许轻微 off-white），返回裁切后的 canvas
+  function trimCanvasWhitespace(srcCanvas, pad) {
+    pad = pad || CROP_PAD;
+    const ctx = srcCanvas.getContext('2d');
+    const W = srcCanvas.width, H = srcCanvas.height;
+    let data;
+    try { data = ctx.getImageData(0, 0, W, H).data; } catch (e) { return srcCanvas; }
+    let minX = W, minY = H, maxX = -1, maxY = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (!(data[i] > 248 && data[i + 1] > 248 && data[i + 2] > 248)) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return srcCanvas;
+    minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+    maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
+    const w = maxX - minX + 1, h = maxY - minY + 1;
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    out.getContext('2d').drawImage(srcCanvas, minX, minY, w, h, 0, 0, w, h);
+    return out;
+  }
+
+  // 主入口：返回 { questions:[{id,bankId,number,type,chapter,difficulty,stem,options,answer,analysis,img}], errors:[] }
+  async function extractPdfImages(u8, onProgress) {
+    const pdfjs = window.__pdfjs;
+    if (!pdfjs) throw new Error('PDF 组件未加载');
+    const doc = await pdfjs.getDocument({ data: u8.slice(0), disableFontFace: true, isEvalSupported: false }).promise;
+    const questions = [];
+    const errors = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      if (onProgress) onProgress(p, doc.numPages);
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      const vp = page.getViewport({ scale: CROP_SCALE });
+      const boxes = pdfItemsToBoxes(tc.items);
+      const pageH = vp.height / CROP_SCALE;
+      const pageW = vp.width / CROP_SCALE;
+
+      // 推断题型 + 定位题号 + 收集水印横条
+      let curType = null;
+      const wmBands = [];
+      boxes.forEach((b) => {
+        const sec = detectPdfSection(b.text);
+        if (sec && b.y1 > 30) curType = sec;
+        if (WATERMARK_KEYS.some((k) => b.text.indexOf(k) >= 0) && b.text.trim().length > 1) {
+          wmBands.push([b.y0, b.y1]);
+        }
+      });
+      const markers = detectMarkers(boxes).map((m) => ({ num: m.num, y0: m.y0, y1: m.y1, type: curType || 'solve' }));
+      if (!markers.length) { await page.cleanup(); continue; }
+      markers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
+
+      // 渲染整页到 canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+      // 先把水印横条涂白（在整页 canvas 上）
+      wmBands.forEach(([by0, by1]) => {
+        const cy0 = Math.floor(vp.height - by1 * CROP_SCALE);
+        const cy1 = Math.ceil(vp.height - by0 * CROP_SCALE);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, Math.max(0, cy0), canvas.width, Math.min(canvas.height, cy1) - Math.max(0, cy0));
+      });
+
+      // 逐题裁切
+      for (let k = 0; k < markers.length; k++) {
+        const mk = markers[k];
+        const topY = mk.y1;
+        const botY = (k + 1 < markers.length) ? markers[k + 1].y1 : 0;
+        // x 范围：左边界起，取该题所在竖直带内的文字最左/最右
+        let bandX0 = pageW, bandX1 = 0;
+        boxes.forEach((b) => {
+          if (b.y1 <= topY + 3 && b.y0 >= botY - 3) {
+            bandX0 = Math.min(bandX0, b.x0);
+            bandX1 = Math.max(bandX1, b.x1);
+          }
+        });
+        const left = 38, right = Math.min(pageW - 18, 575);
+        if (bandX1 <= bandX0) { bandX0 = left; bandX1 = right; }
+        bandX0 = Math.max(left, bandX0 - 5);
+        bandX1 = Math.min(right, bandX1 + 5);
+        let sx = Math.floor(bandX0 * CROP_SCALE);
+        let sy = Math.floor((pageH - topY) * CROP_SCALE);
+        let sw = Math.max(1, Math.ceil((bandX1 - bandX0) * CROP_SCALE));
+        let sh = Math.max(1, Math.ceil((topY - botY) * CROP_SCALE));
+        // 钳制到画布范围内，避免 drawImage 因越界抛 IndexSizeError（floor/ceil 取整可能差 <1px）
+        if (sx < 0) { sw += sx; sx = 0; }
+        if (sy < 0) { sh += sy; sy = 0; }
+        sw = Math.min(sw, canvas.width - sx);
+        sh = Math.min(sh, canvas.height - sy);
+        if (sw <= 0 || sh <= 0) continue;
+        let crop = document.createElement('canvas');
+        crop.width = sw; crop.height = sh;
+        crop.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+        crop = trimCanvasWhitespace(crop);
+        if (crop.width > CROP_MAXW) {
+          const f = CROP_MAXW / crop.width;
+          const d2 = document.createElement('canvas');
+          d2.width = CROP_MAXW; d2.height = Math.round(crop.height * f);
+          d2.getContext('2d').drawImage(crop, 0, 0, d2.width, d2.height);
+          crop = d2;
+        }
+        let dataURL;
+        try { dataURL = crop.toDataURL('image/jpeg', 0.85); } catch (e) { dataURL = crop.toDataURL(); }
+        questions.push({
+          id: uid('q'), bankId: '', number: '(' + mk.num + ')',
+          type: mk.type, chapter: 'PDF导入', difficulty: 3,
+          stem: '', options: [], answer: '', analysis: '', img: dataURL
+        });
+      }
+      await page.cleanup();
+    }
+    await doc.destroy();
+    return { questions, errors };
   }
 
   function splitPdfOptionsLine(line) {
@@ -1958,6 +2219,7 @@
 
   function mergeBank(mode) {
     if (!uploadParsed) return;
+    if (uploadParsed.isImage) { mergeImageBank(mode); return; }
     if (auth.active) {
       // 云端模式：逐题写入后端（基础题库不可替换，统一并入总题库）
       const qs = uploadParsed.questions.slice();
@@ -1998,6 +2260,46 @@
     uploadParsed = null;
     toast('已入库 ' + added + ' 道题到「' + name + '」');
     render();
+  }
+
+  // 图片题库入库：题目（含 dataURL）写入 IndexedDB，localStorage 仅保留轻量元数据
+  async function mergeImageBank(mode) {
+    const nameInput = $('#uploadBankName');
+    const name = (nameInput && nameInput.value.trim()) || uploadParsed.bankName || defaultUploadBankName();
+    let bank = state.banks.find((b) => b.id !== 'bank_total' && b.name === name);
+    if (mode === 'replace') {
+      if (bank && imgBankIds.has(bank.id)) { try { await idbDeleteBank(bank.id); } catch (e) {} imgBankIds.delete(bank.id); }
+      state.banks = state.banks.filter((b) => b.id === 'bank_total' || !imgBankIds.has(b.id));
+      state.bank = state.bank.filter((q) => !imgBankIds.has(q.bankId));
+      bank = null;
+    }
+    if (!bank) {
+      bank = { id: uid('bank'), name: name, createdAt: new Date().toISOString(), userBank: true, imgBank: true };
+      state.banks.push(bank);
+    }
+    imgBankIds.add(bank.id);
+    const qs = uploadParsed.questions.map((q) => Object.assign({}, q, { bankId: bank.id }));
+    state.bank = state.bank.concat(qs);
+    try {
+      await idbPutBank({ id: bank.id, name: bank.name, createdAt: bank.createdAt, questions: qs });
+    } catch (e) {
+      console.warn('图片题库本机保存失败', e);
+      toast('当前浏览器不支持本地数据库，图片题库仅在本次打开期间有效');
+    }
+    saveData();
+    uploadParsed = null;
+    toast('已入库 ' + qs.length + ' 道图片题到「' + name + '」（已本机保存，刷新不丢）');
+    render();
+  }
+
+  // 删除图片题后，异步把对应图片题库在 IndexedDB 中同步（不阻塞 UI）
+  function syncImgBankDeleteQuestion(bankId, qid) {
+    idbGetBank(bankId).then((rec) => {
+      if (!rec) return;
+      rec.questions = (rec.questions || []).filter((x) => x.id !== qid);
+      if (!rec.questions.length) return idbDeleteBank(bankId).then(() => { imgBankIds.delete(bankId); }).catch(() => {});
+      return idbPutBank(rec);
+    }).catch((e) => console.warn('更新图片题库失败', e));
   }
 
   function openQuestionModal(qid) {
@@ -2741,6 +3043,7 @@
         });
       });
       state.banks = state.banks.filter((b) => b.id !== bankId);
+      if (imgBankIds.has(bankId)) { idbDeleteBank(bankId).catch(function () {}); imgBankIds.delete(bankId); }
       if (bankFilter.bank === bankId) bankFilter.bank = 'all';
       if (group.bank === bankId) group.bank = 'all';
       if (group.listBank === bankId) group.listBank = 'all';
@@ -2766,6 +3069,8 @@
       state.papers.forEach((p) => {
         p.qids = (p.qids || []).filter((x) => x !== qid);
       });
+      const dq = state.bank.find((x) => x.id === qid);
+      if (dq && imgBankIds.has(dq.bankId)) syncImgBankDeleteQuestion(dq.bankId, qid);
       saveData();
       closeModal();
       toast('题目已删除');
