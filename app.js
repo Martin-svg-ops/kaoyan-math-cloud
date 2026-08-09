@@ -1841,23 +1841,69 @@
     return out;
   }
 
-  // 在原始 item 上检测题号：左括号 item（x0<140）紧跟纯数字 item 即为一题
-  // （pdf.js 常把 "(1)" 拆成多个 item，且整行会被合并成巨型 token，故不能用整词正则）
+  // 判断某 item 是否处于其所在视觉行的行首（x 最小），用于识别题号
+  function isLineStart(boxes, i) {
+    const b = boxes[i];
+    let minX = b.x0;
+    for (let j = 0; j < boxes.length; j++) {
+      if (j === i) continue;
+      if (Math.abs(boxes[j].y1 - b.y1) < 3) minX = Math.min(minX, boxes[j].x0);
+    }
+    return b.x0 <= minX + 3;
+  }
+
+  // 检测题号：支持 (N) / （N） / N. / N、 / N) / 【例 N】 / 习题N / 第N题 / 罗马数字
+  // （pdf.js 常把 "(1)" 拆成多个 item，且整行会被合并成巨型 token，故不能仅靠整词正则）
   function detectMarkers(boxes) {
     const markers = [];
+    const used = new Set();
+    const ROMAN = { 'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10 };
+    const push = (num, b, extra) => markers.push(Object.assign({ num, y0: b.y0, y1: b.y1 }, extra || {}));
+    // 第一遍：(N) / （N） / 罗马数字题号
     for (let i = 0; i < boxes.length; i++) {
+      if (used.has(i)) continue;
       const b = boxes[i];
       const isOpen = b.text === '(' || b.text === '（';
-      if (!isOpen || b.x0 >= 140) continue;
+      if (!isOpen) continue;
+      if (!(b.x0 < 160 || isLineStart(boxes, i))) continue;
       const nxt = boxes[i + 1];
-      if (nxt && Math.abs(nxt.y1 - b.y1) < 4) {
-        const digits = nxt.text.replace(/[）).、]/g, '').trim();
-        if (/^\d{1,2}$/.test(digits)) {
-          markers.push({ num: parseInt(digits, 10), y0: b.y0, y1: b.y1 });
-          i++; // 跳过数字 item
+      if (nxt && !used.has(i + 1) && Math.abs(nxt.y1 - b.y1) < 4) {
+        const dig = nxt.text.replace(/[）).、]/g, '').trim();
+        if (/^\d{1,2}$/.test(dig)) { push(parseInt(dig, 10), b); used.add(i); used.add(i + 1); continue; }
+        if (/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]$/.test(nxt.text.trim())) { push(ROMAN[nxt.text.trim()], b, { roman: true }); used.add(i); used.add(i + 1); continue; }
+      }
+      const m = /^\((\d{1,2})[）).、]?$/.exec(b.text);
+      if (m) { push(parseInt(m[1], 10), b); used.add(i); continue; }
+      const mr = /^\(([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\)$/.exec(b.text);
+      if (mr) { push(ROMAN[mr[1]], b, { roman: true }); used.add(i); continue; }
+    }
+    // 第二遍：N. / N、 / N) 行首
+    for (let i = 0; i < boxes.length; i++) {
+      if (used.has(i)) continue;
+      const b = boxes[i];
+      if (!isLineStart(boxes, i)) continue;
+      const t = b.text.trim();
+      const m = /^(\d{1,3})[.、)）]$/.exec(t);
+      if (m && parseInt(m[1], 10) <= 400) { push(parseInt(m[1], 10), b); used.add(i); continue; }
+      if (/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]$/.test(t)) { push(ROMAN[t], b, { roman: true }); used.add(i); continue; }
+    }
+    // 第三遍：中文题号 例N / 习题N / 第N题（行首、短 token，避免误判"例如"等）
+    for (let i = 0; i < boxes.length; i++) {
+      if (used.has(i)) continue;
+      const b = boxes[i];
+      if (!isLineStart(boxes, i)) continue;
+      const t = b.text.trim();
+      if (t.length > 12) continue;
+      const m = /^(?:【)?例\s*(\d{1,3})】?$/.exec(t) || /^(?:【)?习题\s*(\d{1,3})】?$/.exec(t) || /^第\s*(\d{1,3})\s*题$/.exec(t);
+      if (m) { push(parseInt(m[1], 10), b); used.add(i); continue; }
+      if (/^(【)?例$/.test(t)) {
+        const nxt = boxes[i + 1];
+        if (nxt && !used.has(i + 1) && Math.abs(nxt.y1 - b.y1) < 4 && /^\d{1,3}$/.test(nxt.text.trim())) {
+          push(parseInt(nxt.text.trim(), 10), b); used.add(i); used.add(i + 1); continue;
         }
       }
     }
+    markers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
     return markers;
   }
 
@@ -1921,7 +1967,7 @@
         }
       }
     }
-    if (maxX < 0) return srcCanvas;
+    if (maxX < 0) return null;
     minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
     maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
     const w = maxX - minX + 1, h = maxY - minY + 1;
@@ -1945,7 +1991,6 @@
       const vp = page.getViewport({ scale: CROP_SCALE });
       const boxes = pdfItemsToBoxes(tc.items);
       const pageH = vp.height / CROP_SCALE;
-      const pageW = vp.width / CROP_SCALE;
 
       // 推断题型 + 定位题号 + 收集水印横条
       let curType = null;
@@ -1953,12 +1998,11 @@
       boxes.forEach((b) => {
         const sec = detectPdfSection(b.text);
         if (sec && b.y1 > 30) curType = sec;
-        if (WATERMARK_KEYS.some((k) => b.text.indexOf(k) >= 0) && b.text.trim().length > 1) {
+        if (WATERMARK_KEYS.some((k) => b.text.indexOf(k) >= 0) && b.text.trim().length <= 24) {
           wmBands.push([b.y0, b.y1]);
         }
       });
       const markers = detectMarkers(boxes).map((m) => ({ num: m.num, y0: m.y0, y1: m.y1, type: curType || 'solve' }));
-      if (!markers.length) { await page.cleanup(); continue; }
       markers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
 
       // 渲染整页到 canvas
@@ -1976,39 +2020,21 @@
         ctx.fillRect(0, Math.max(0, cy0), canvas.width, Math.min(canvas.height, cy1) - Math.max(0, cy0));
       });
 
-      // 逐题裁切
-      for (let k = 0; k < markers.length; k++) {
-        const mk = markers[k];
-        const topY = mk.y1;
-        const botY = (k + 1 < markers.length) ? markers[k + 1].y1 : 0;
-        // x 范围：左边界起，取该题所在竖直带内的文字最左/最右
-        let bandX0 = pageW, bandX1 = 0;
-        let qText = '';
-        boxes.forEach((b) => {
-          if (b.y1 <= topY + 3 && b.y0 >= botY - 3) {
-            bandX0 = Math.min(bandX0, b.x0);
-            bandX1 = Math.max(bandX1, b.x1);
-            if (!WATERMARK_KEYS.some((k) => b.text.indexOf(k) >= 0) && b.text.trim()) qText += b.text + ' ';
-          }
-        });
-        const left = 38, right = Math.min(pageW - 18, 575);
-        if (bandX1 <= bandX0) { bandX0 = left; bandX1 = right; }
-        bandX0 = Math.max(left, bandX0 - 5);
-        bandX1 = Math.min(right, bandX1 + 5);
-        let sx = Math.floor(bandX0 * CROP_SCALE);
+      // 逐题裁切：满宽裁切（避免横向截断公式/表格/配图），再智能去白边
+      const vpad = 3; // 上下各留白（PDF 点），避免题号与上下题文字被贴边裁掉
+      const doCrop = (topY, botY, qText, num, type) => {
+        const sx = 0, sw = canvas.width; // 满宽，彻底消除横向截断
         let sy = Math.floor((pageH - topY) * CROP_SCALE);
-        let sw = Math.max(1, Math.ceil((bandX1 - bandX0) * CROP_SCALE));
         let sh = Math.max(1, Math.ceil((topY - botY) * CROP_SCALE));
         // 钳制到画布范围内，避免 drawImage 因越界抛 IndexSizeError（floor/ceil 取整可能差 <1px）
-        if (sx < 0) { sw += sx; sx = 0; }
         if (sy < 0) { sh += sy; sy = 0; }
-        sw = Math.min(sw, canvas.width - sx);
         sh = Math.min(sh, canvas.height - sy);
-        if (sw <= 0 || sh <= 0) continue;
+        if (sh <= 0) return null;
         let crop = document.createElement('canvas');
         crop.width = sw; crop.height = sh;
         crop.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-        crop = trimCanvasWhitespace(crop);
+        crop = trimCanvasWhitespace(crop); // 全白页返回 null
+        if (!crop) return null;
         if (crop.width > CROP_MAXW) {
           const f = CROP_MAXW / crop.width;
           const d2 = document.createElement('canvas');
@@ -2018,11 +2044,35 @@
         }
         let dataURL;
         try { dataURL = crop.toDataURL('image/jpeg', 0.85); } catch (e) { dataURL = crop.toDataURL(); }
-        questions.push({
-          id: uid('q'), bankId: '', number: '(' + mk.num + ')',
-          type: mk.type, chapter: classifyChapterByText(qText), difficulty: 3,
+        return {
+          id: uid('q'), bankId: '', number: num,
+          type, chapter: classifyChapterByText(qText), difficulty: 3,
           stem: '', options: [], answer: '', analysis: '', img: dataURL
-        });
+        };
+      };
+
+      if (markers.length) {
+        for (let k = 0; k < markers.length; k++) {
+          const mk = markers[k];
+          // 首题向上延伸到页面顶（保留章节标题等上方内容）；其余题号上移 vpad
+          const topY = (k === 0) ? pageH : Math.min(pageH, mk.y1 + vpad);
+          const botY = (k + 1 < markers.length) ? Math.max(0, markers[k + 1].y1 - vpad) : 0;
+          let qText = '';
+          const nb = (k + 1 < markers.length) ? markers[k + 1].y1 : 0;
+          boxes.forEach((b) => {
+            if (b.y1 <= mk.y1 + 3 && b.y0 >= nb - 3) {
+              if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) qText += b.text + ' ';
+            }
+          });
+          const q = doCrop(topY, botY, qText, '(' + mk.num + ')', mk.type);
+          if (q) questions.push(q);
+        }
+      } else {
+        // 整页兜底：无题号 / 图片型 PDF（无文字层）也至少保留整页，避免整页丢失
+        let qText = '';
+        boxes.forEach((b) => { if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) qText += b.text + ' '; });
+        const q = doCrop(pageH, 0, qText, '(P' + p + ')', curType || 'solve');
+        if (q) questions.push(q);
       }
       await page.cleanup();
     }
