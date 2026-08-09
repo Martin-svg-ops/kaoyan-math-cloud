@@ -1,20 +1,24 @@
 (function () {
   'use strict';
 
-  // pdf.js v5.6.205 的构建漏了部分平台方法，
+  // pdf.js v5.6.205 的构建使用了较新的平台方法，
   // 在 worker/老浏览器（如平板 Safari）会抛 "...is not a function"。
-  // 这里在主线程补上；worker 线程的 polyfill 在 vendor/pdf.worker.min.mjs 头部。
+  // 这里在主线程补上；fake worker 运行于主线程，可共享此垫片。
   if (typeof Uint8Array !== 'undefined' && !Uint8Array.prototype.toHex) {
     Uint8Array.prototype.toHex = function () {
-      let s = '';
-      for (let i = 0; i < this.length; i++) s += this[i].toString(16).padStart(2, '0');
+      var hex = '0123456789abcdef';
+      var s = '';
+      for (var i = 0; i < this.length; i++) {
+        var b = this[i];
+        s += hex[b >>> 4] + hex[b & 15];
+      }
       return s;
     };
   }
   if (typeof Map !== 'undefined' && !Map.prototype.getOrInsertComputed) {
     Map.prototype.getOrInsertComputed = function (key, callback) {
       if (this.has(key)) return this.get(key);
-      const value = callback(key, this);
+      var value = callback(key, this);
       this.set(key, value);
       return value;
     };
