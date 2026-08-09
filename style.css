@@ -321,6 +321,8 @@ button { cursor: pointer; }
 
 .btn-danger { background: var(--surface); border-color: var(--line-strong); color: var(--red); }
 .btn-danger:hover { background: var(--red-soft); border-color: var(--red); }
+.btn-danger-outline { background: transparent; border-color: var(--red); color: var(--red); font-size: 0.8rem; }
+.btn-danger-outline:hover { background: var(--red-soft); }
 
 .btn-ghost { border-color: transparent; background: transparent; }
 .btn-ghost:hover { border-color: var(--line-strong); background: var(--surface-2); }

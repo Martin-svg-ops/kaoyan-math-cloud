@@ -78,7 +78,7 @@ function seedAdmin() {
     const pw = process.env.ADMIN_PASSWORD || 'admin123';
     const { salt, hash } = hashPW(pw);
     db.users.push({
-      id: 'u_admin', username, salt, hash, isAdmin: true, createdAt: new Date().toISOString(),
+      id: 'u_admin', username, salt, hash, isAdmin: true, hasBaseBank: true, createdAt: new Date().toISOString(),
       added: [], deletedIds: [], wrongBooks: []
     });
     saveDB();
@@ -96,8 +96,9 @@ function isUserId(id) { return typeof id === 'string' && id.length > 0; }
 function effectiveBank(user) {
   const deleted = new Set(user.deletedIds || []);
   const deletedBanks = new Set(user.deletedBankIds || []);
-  // 如果基础题库被标记为已删除，不返回任何基础题
-  const base = deletedBanks.has(BASE.bankMeta.id) ? [] : BASE.questions.filter((q) => !deleted.has(q.id));
+  // 只有拥有基础题库权限的用户（管理员或被显式授予）才包含 880 基础题库
+  const hasBase = user.isAdmin || user.hasBaseBank === true;
+  const base = (hasBase && !deletedBanks.has(BASE.bankMeta.id)) ? BASE.questions.filter((q) => !deleted.has(q.id)) : [];
   // 过滤掉属于已删除题库的用户新增题目
   const added = (user.added || []).filter((q) => !deletedBanks.has(q.bankId)).map((q) => Object.assign({}, q));
   return base.concat(added);
@@ -332,7 +333,7 @@ async function handleApi(req, res, url) {
     if (password.length < 4) return sendJSON(res, 400, { error: '密码至少 4 位' });
     if (findUserByName(username)) return sendJSON(res, 409, { error: '用户名已存在' });
     const { salt, hash } = hashPW(password);
-    const user = { id: newSeq('u'), username, salt, hash, isAdmin: false, createdAt: new Date().toISOString(), added: [], deletedIds: [], wrongBooks: [] };
+    const user = { id: newSeq('u'), username, salt, hash, isAdmin: false, hasBaseBank: false, createdAt: new Date().toISOString(), added: [], deletedIds: [], wrongBooks: [] };
     db.users.push(user);
     saveDB();
     const token = newToken();
@@ -386,7 +387,8 @@ async function handleApi(req, res, url) {
         customBanks.push({ id: q.bankId, name: q.bankName || q.bankId });
       }
     });
-    const banks = deletedSet.has(BASE.bankMeta.id) ? [...customBanks] : [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }, ...customBanks];
+    const hasBase = me.isAdmin || me.hasBaseBank === true;
+    const banks = (hasBase && !deletedSet.has(BASE.bankMeta.id)) ? [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }, ...customBanks] : [...customBanks];
     return sendJSON(res, 200, {
       banks: banks,
       bank: effectiveBank(me),
@@ -553,6 +555,23 @@ async function handleApi(req, res, url) {
     const target = findUserById(uid);
     if (!target) return sendJSON(res, 404, { error: '用户不存在' });
     return sendJSON(res, 200, { user: publicUser(target), bank: effectiveBank(target) });
+  }
+
+  // 管理者：删除指定用户
+  const mAdminDel = p.match(/^\/api\/admin\/users\/(.+)$/);
+  if (mAdminDel && method === 'DELETE') {
+    if (!me.isAdmin) return sendJSON(res, 403, { error: '需要管理者权限' });
+    const uid = decodeURIComponent(mAdminDel[1]);
+    if (uid === me.id) return sendJSON(res, 400, { error: '不能删除自己' });
+    const targetIdx = db.users.findIndex((u) => u.id === uid);
+    if (targetIdx < 0) return sendJSON(res, 404, { error: '用户不存在' });
+    const targetName = db.users[targetIdx].username;
+    // 清理该用户的所有会话
+    Object.keys(db.sessions).forEach((k) => { if (db.sessions[k] === uid) delete db.sessions[k]; });
+    db.users.splice(targetIdx, 1);
+    saveDB();
+    console.log('[server] 管理者 ' + me.username + ' 已删除用户: ' + targetName);
+    return sendJSON(res, 200, { ok: true, deleted: targetName });
   }
 
   // 管理者：导出数据库备份（用于部署前保留用户数据）

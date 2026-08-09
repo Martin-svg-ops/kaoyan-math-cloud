@@ -3772,6 +3772,18 @@
     } else if (action === 'admin-back') {
       view = 'admin';
       render();
+    } else if (action === 'admin-delete-user') {
+      var delUid = btn.dataset.uid;
+      var delUname = btn.dataset.uname;
+      if (confirm('确定要删除用户「' + delUname + '」吗？\n该用户的所有数据（题库、错题本）将被永久删除且无法恢复。')) {
+        try {
+          var dr = await API.deleteUser(auth.token, delUid);
+          toast('已删除用户：' + dr.deleted);
+          renderAdmin(document.getElementById('content'));
+        } catch (e) {
+          toast('删除失败：' + ((e && e.message) || e));
+        }
+      }
     } else if (action === 'close-modal') {
       closeModal();
     // ── 错题本管理 ──
@@ -4092,6 +4104,7 @@
     deleteQuestion: function (token, id) { return this._req('DELETE', '/api/questions/' + encodeURIComponent(id), null, token); },
     adminUsers: function (token) { return this._req('GET', '/api/admin/users', null, token); },
     adminUserBank: function (token, id) { return this._req('GET', '/api/admin/users/' + encodeURIComponent(id) + '/bank', null, token); },
+    deleteUser: function (token, id) { return this._req('DELETE', '/api/admin/users/' + encodeURIComponent(id), null, token); },
     wrongBooks: function (token) { return this._req('GET', '/api/wrong-books', null, token); },
     createWrongBook: function (token, name) { return this._req('POST', '/api/wrong-books', { name: name }, token); },
     updateWrongBook: function (token, id, data) { return this._req('PUT', '/api/wrong-books/' + encodeURIComponent(id), data, token); },
@@ -4102,12 +4115,7 @@
     const d = await API.bank(auth.token);
     state.banks = d.banks;
     state.bank = d.bank;
-    // 跳过已被服务器标记为已删除的题库，避免重新合并被删题库
-    if (d.deletedBankIds && d.deletedBankIds.length) {
-      ensurePreloadedBank(state, new Set(d.deletedBankIds));
-    } else {
-      ensurePreloadedBank(state);
-    }
+    // 云端模式：服务器是题库的唯一权威来源，不再注入本地预置题库
     // 加载云端错题本（合并到本地，云端优先）
     try {
       const wbResp = await API.wrongBooks(auth.token);
@@ -4261,7 +4269,7 @@
     if (p) p.value = '';
     if (e) e.textContent = '';
     view = 'browse';
-    state = loadData();
+  }
   }
 
   async function apiSaveQuestion(q, qid) {
@@ -4292,13 +4300,17 @@
     try {
       var d = await API.adminUsers(auth.token);
       var rows = (d.users || []).map(function (u) {
-        var chg = (u.addedCount + u.deletedCount > 0) ? ('自增 ' + u.addedCount + ' · 隐藏 ' + u.deletedIds.length) : '仅基础题库';
+        var chg = (u.addedCount + u.deletedCount > 0) ? ('自增 ' + u.addedCount + ' · 隐藏 ' + u.deletedCount) : '空题库';
+        var actions = '<button class="btn btn-sm" data-action="admin-view-user" data-uid="' + esc(u.id) + '" type="button">查看题库</button>';
+        if (!u.isAdmin) {
+          actions += ' <button class="btn btn-sm btn-danger-outline" data-action="admin-delete-user" data-uid="' + esc(u.id) + '" data-uname="' + esc(u.username) + '" type="button">删除</button>';
+        }
         return '<tr><td><strong>' + esc(u.username) + '</strong>' + (u.isAdmin ? ' <span class="badge badge-blue">管理者</span>' : '') + '</td>' +
           '<td class="num">' + chg + '</td>' +
-          '<td><button class="btn btn-sm" data-action="admin-view-user" data-uid="' + esc(u.id) + '" type="button">查看题库</button></td></tr>';
+          '<td>' + actions + '</td></tr>';
       }).join('');
       var ab = document.getElementById('adminBody');
-      if (ab) ab.innerHTML = '<div class="table-wrap"><table class="table" style="min-width:520px"><thead><tr><th>用户</th><th>题库改动</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      if (ab) ab.innerHTML = '<div class="table-wrap"><table class="table" style="min-width:560px"><thead><tr><th>用户</th><th>题库改动</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     } catch (e) {
       var ab2 = document.getElementById('adminBody');
       if (ab2) ab2.innerHTML = '<div class="empty-state">加载失败：' + esc((e && e.message) || e) + '</div>';
