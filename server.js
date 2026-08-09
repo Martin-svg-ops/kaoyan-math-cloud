@@ -315,7 +315,7 @@ async function handleApi(req, res, url) {
 
   // 健康检查
   if (p === '/api/health' && method === 'GET') {
-    return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length, version: 'v61' });
+    return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length, version: 'v62' });
   }
 
   // AI 题目识别（通义千问 Qwen-VL 代理）。公开接口，无需登录。

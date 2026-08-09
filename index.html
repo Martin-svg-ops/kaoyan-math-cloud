@@ -187,11 +187,100 @@
   </div>
   <dialog class="modal" id="modal"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=61"></script>
-  <!-- v59: 考研主题登录页 - 全屏登录/注册，多用户隔离 -->
+  <script src="app.js?v=62"></script>
+  <!-- PWA 安装提示横幅 -->
+  <div class="install-banner" id="installBanner" style="display:none">
+    <div class="install-banner-inner">
+      <div class="install-banner-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </div>
+      <div class="install-banner-text">
+        <strong>安装「研数工坊」APP</strong>
+        <span>添加到桌面，随时随地刷题</span>
+      </div>
+      <button class="install-banner-btn" id="installBtn" type="button">安装</button>
+      <button class="install-banner-close" id="installDismiss" type="button" aria-label="关闭">&times;</button>
+    </div>
+  </div>
+  <!-- Service Worker 注册 -->
   <script>
-    /* 已关闭 service worker 离线缓存，避免旧缓存导致新题库不显示。
-       如需离线能力，请改回注册并同步升级 sw.js 的 CACHE_NAME。 */
+    (function() {
+      if (!('serviceWorker' in navigator)) return;
+      var swReg = null;
+      var installEvent = null;
+
+      // 注册 Service Worker
+      navigator.serviceWorker.register('./sw.js?v=62', { scope: './' })
+        .then(function(reg) {
+          swReg = reg;
+          console.log('[SW] registered, scope:', reg.scope);
+          // 监听更新
+          reg.addEventListener('updatefound', function() {
+            var newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', function() {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // 新版本已就绪，提示用户刷新
+                console.log('[SW] new version ready, please refresh');
+              }
+            });
+          });
+        })
+        .catch(function(err) {
+          console.warn('[SW] registration failed:', err);
+        });
+
+      // 监听 PWA 安装事件
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        installEvent = e;
+        // 显示安装横幅
+        var banner = document.getElementById('installBanner');
+        if (banner) banner.style.display = 'block';
+      });
+
+      // 安装按钮
+      document.addEventListener('click', function(e) {
+        var btn = e.target.closest('#installBtn');
+        if (!btn) return;
+        if (!installEvent) {
+          alert('当前浏览器不支持一键安装。\n\n请使用浏览器菜单中的「添加到主屏幕」功能。');
+          return;
+        }
+        installEvent.prompt();
+        installEvent.userChoice.then(function(result) {
+          console.log('[PWA] install choice:', result.outcome);
+          installEvent = null;
+          var banner = document.getElementById('installBanner');
+          if (banner) banner.style.display = 'none';
+        });
+      });
+
+      // 关闭安装横幅
+      document.addEventListener('click', function(e) {
+        var btn = e.target.closest('#installDismiss');
+        if (!btn) return;
+        var banner = document.getElementById('installBanner');
+        if (banner) banner.style.display = 'none';
+        // 7 天内不再提示
+        try { localStorage.setItem('ym_install_dismissed', Date.now()); } catch(_) {}
+      });
+
+      // 已安装后隐藏横幅
+      window.addEventListener('appinstalled', function() {
+        console.log('[PWA] app installed');
+        var banner = document.getElementById('installBanner');
+        if (banner) banner.style.display = 'none';
+      });
+
+      // 如果已在 standalone 模式或 7 天内关闭过，不显示横幅
+      if (window.matchMedia('(display-mode: standalone)').matches) return;
+      try {
+        var dismissed = localStorage.getItem('ym_install_dismissed');
+        if (dismissed && (Date.now() - parseInt(dismissed)) < 7 * 86400000) return;
+      } catch(_) {}
+      // 延迟显示，避免在登录页弹出
+    })();
   </script>
 </body>
 </html>

@@ -1057,6 +1057,74 @@ button { cursor: pointer; }
   text-align: center; line-height: 1.6;
 }
 
+/* ===================== PWA 安装横幅 ===================== */
+.install-banner {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998;
+  background: #1a2744; color: #f1f5f9;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  animation: slideUpBanner .35s ease-out;
+  padding: env(safe-area-inset-bottom, 0) 0 0;
+}
+@keyframes slideUpBanner {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.install-banner-inner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; max-width: 720px; margin: 0 auto;
+}
+.install-banner-icon {
+  flex-shrink: 0; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(59, 130, 246, 0.3); border-radius: 10px;
+}
+.install-banner-icon svg { width: 20px; height: 20px; color: #60a5fa; }
+.install-banner-text { flex: 1; min-width: 0; }
+.install-banner-text strong { display: block; font-size: 14px; font-weight: 600; }
+.install-banner-text span  { display: block; font-size: 12px; color: rgba(148, 163, 184, 0.8); margin-top: 2px; }
+.install-banner-btn {
+  flex-shrink: 0; padding: 8px 20px; border: none; border-radius: 8px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.install-banner-btn:active { transform: scale(0.96); }
+.install-banner-close {
+  flex-shrink: 0; width: 28px; height: 28px; border: none; background: transparent;
+  color: rgba(148, 163, 184, 0.6); font-size: 20px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+}
+.install-banner-close:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+
+/* ===================== PWA 全局触摸优化 ===================== */
+/* 最小触摸目标 44x44px（iOS HIG） */
+@media (pointer: coarse) {
+  .btn, .btn-sm, .btn-ghost, .tab-nav button, .sidebar-tab,
+  .login-tab, .login-submit, .chapter-nav a, .topbar-btn {
+    min-height: 44px;
+    min-width:  44px;
+  }
+  /* 表格里的操作按钮可以稍小 */
+  .btn-sm { min-height: 36px; min-width: 36px; }
+
+  /* 防止 iOS 双击缩放 */
+  button, a, [role="button"], input[type="submit"] {
+    touch-action: manipulation;
+  }
+}
+
+/* 安全区域适配（iPhone X+ 刘海屏 / 底部指示条） */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+  .content { padding-bottom: calc(44px + env(safe-area-inset-bottom)); }
+}
+
+/* 横屏平板优化（768px ~ 1024px） */
+@media (min-width: 768px) and (max-width: 1100px) {
+  .content { padding: 20px 24px 44px; }
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* 响应式 */
 @media (max-width: 800px) {
   .login-container { flex-direction: column; max-width: 420px; min-height: auto; }
@@ -1074,7 +1142,25 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 420px) {
-  .login-container { border-radius: 0; max-width: 100vw; min-height: 100vh; }
+  .login-container { border-radius: 0; max-width: 100vw; min-height: 100vh; min-height: 100dvh; }
   .login-hero { padding: 32px 16px 20px; }
   .login-card-wrap { padding: 16px 16px 32px; }
+  .login-logo-mark { width: 38px; height: 38px; font-size: 18px; }
+  .login-logo-name { font-size: 20px; }
+  .login-card-title { font-size: 20px; }
+  .login-submit { padding: 14px; font-size: 16px; }
+  .login-input { font-size: 16px; } /* 防止 iOS 缩放 */
+}
+
+/* PWA standalone 模式顶部安全区域 */
+@media (display-mode: standalone) {
+  .login-page { padding-top: env(safe-area-inset-top); }
+  .topbar { padding-top: env(safe-area-inset-top, 0); }
+  .sidebar { top: calc(var(--topbar-h) + env(safe-area-inset-top, 0)); }
+}
+
+/* 触摸设备超大按钮 */
+@media (hover: none) and (pointer: coarse) {
+  .login-submit { padding: 14px; font-size: 16px; }
+  .login-input { padding: 12px 12px 12px 40px; font-size: 16px; }
 }

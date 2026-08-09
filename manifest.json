@@ -1,16 +1,19 @@
 {
   "name": "研数工坊 · 考研数学题库与组卷",
   "short_name": "研数工坊",
-  "description": "考研数学题库、智能组卷与错题复习工具",
+  "description": "考研数学题库、智能组卷与错题复习工具，支持电脑、平板、手机全平台使用",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "orientation": "any",
   "background_color": "#1a2744",
   "theme_color": "#1a2744",
   "lang": "zh-CN",
   "dir": "ltr",
   "categories": ["education", "productivity"],
+  "iarc_rating_id": "",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icons/icon-192.png",
@@ -29,6 +32,15 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "研数工坊主界面"
     }
   ]
 }
