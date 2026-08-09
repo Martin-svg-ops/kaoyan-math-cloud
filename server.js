@@ -87,9 +87,10 @@ function initGit() {
       const token = process.env.GIT_TOKEN;
       const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
       try {
-        execSync('git pull ' + repo + ' master -- server-data/db.json 2>&1', { cwd: ROOT, timeout: 15000 });
+        // 拉取远程 master 后直接检出 db.json（不合并，避免冲突）
+        execSync('git fetch ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
+        execSync('git checkout FETCH_HEAD -- server-data/db.json 2>&1', { cwd: ROOT, timeout: 8000 });
         console.log('[git] 已拉取远程 db.json');
-        loadDB(); // 重新加载拉取到的数据
       } catch (_) { /* 远程无数据，使用本地 */ }
     }
   } catch (_) { /* git 不可用 */ }
@@ -641,33 +642,6 @@ async function handleApi(req, res, url) {
     saveDB();
     console.log('[server] 数据库已从备份恢复，用户数: ' + db.users.length);
     return sendJSON(res, 200, { ok: true, userCount: db.users.length });
-  }
-
-  // 调试：测试 git 同步
-  if (p === '/api/admin/git-debug' && method === 'GET') {
-    if (!me.isAdmin) return sendJSON(res, 403, { error: '需要管理者权限' });
-    const out = { hasToken: !!process.env.GIT_TOKEN, steps: [] };
-    try {
-      const token = process.env.GIT_TOKEN;
-      const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
-      execSync('git config user.email "sync@kaoyan-math.local"', { cwd: ROOT });
-      execSync('git config user.name "KaoyanMathSync"', { cwd: ROOT });
-      out.branch = String(execSync('git rev-parse --abbrev-ref HEAD', { cwd: ROOT })).trim();
-      out.status = String(execSync('git status --short', { cwd: ROOT })).trim().slice(0, 300);
-      out.userCount = db.users.length;
-      out.steps.push('git add...');
-      execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
-      out.statusAfterAdd = String(execSync('git status --short', { cwd: ROOT })).trim().slice(0, 300);
-      out.steps.push('git commit...');
-      try { out.commitOut = String(execSync('git commit -m "data: debug" 2>&1', { cwd: ROOT, timeout: 8000 })).trim().slice(0, 300); out.steps.push('committed'); }
-      catch (e) { out.commitOut = String(e.stdout || e.message || '').trim().slice(0, 300); out.steps.push('commit failed'); }
-      out.steps.push('git push...');
-      try { out.pushOut = String(execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 15000 })).trim().slice(0, 300); out.steps.push('PUSH OK'); }
-      catch (e) { out.pushOut = String(e.stdout || e.stderr || e.message || '').trim().slice(0, 400); out.steps.push('PUSH FAIL'); }
-    } catch (e) {
-      out.error = String(e.message || e).slice(0, 400);
-    }
-    return sendJSON(res, 200, out);
   }
 
   return sendJSON(res, 404, { error: 'not found' });
