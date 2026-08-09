@@ -183,29 +183,60 @@ function extractJson(s) {
   return null;
 }
 
+// 本地文本预过滤：用 PDF 文本层信息直接判断，无需调 AI。
+// 返回 true 表示明显不是题目（应过滤），false 表示需要 AI 进一步判断。
+function localTextFilter(text) {
+  if (!text) return false; // 无文本（可能是图片型 PDF），交给 AI
+  const t = String(text).trim();
+  if (!t) return true; // 空文本
+  const cjk = (t.match(/[一-龥]/g) || []).length;
+  // 纯数字（页码）
+  if (/^[0-9\s]+$/.test(t)) return true;
+  // 纯页码/页眉
+  if (/^第\s*\d+\s*页/.test(t)) return true;
+  // 极短且几乎无汉字
+  if (t.length < 8 && cjk < 2) return true;
+  // 图注/表注（短文本）
+  if (/^(图|表)\s*\d/.test(t) && t.length < 22) return true;
+  // 解答延续
+  if (/^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t)) return true;
+  if (/^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t)) return true;
+  return false;
+}
+
 async function classifyOne(im, model, apiKey) {
+  // 本地文本预过滤：省掉 AI 调用，大幅提速
+  if (localTextFilter(im.text)) {
+    return { id: im.id, isQuestion: false, isBlank: true, number: null, chapter: null, type: 'solve', confidence: 1, localFilter: true };
+  }
   const prompt =
-    '你是考研数学题库的切图质检员。下面是一张从 PDF 裁出的图片。' +
-    '请判断它是否是一道“完整的数学题目”（而非：空白页 / 页眉页脚 / 页码 / 图注 / 广告水印 / 纯公式碎片 / 上一题的解答延续）。' +
-    '只输出一个 JSON 对象，不要任何解释。格式：' +
-    '{"isQuestion": true或false, "isBlank": true或false, "number": "题号字符串或null", "chapter": "章节或null", "type": "solve|choice|fill|judge|proof", "confidence": 0到1的小数}。' +
-    'chapter 只能从以下选一（无法确定则写 null）：' + AI_CHAPTERS.join(' / ') + '。' +
-    '若图片是题目但看不清题号，number 写 null；若明显是解答延续或碎片/空白，isQuestion 写 false。';
-  const resp = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: model,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: im.dataUrl } }
-        ]
-      }],
-      response_format: { type: 'json_object' }
-    })
-  });
+    '判断这张图片是否是一道完整的数学题目。只回答JSON：' +
+    '{"isQuestion": true/false, "isBlank": true/false, "number": "题号或null", "confidence": 0-1}。' +
+    '空白页、页眉页脚、页码、图注、广告水印、纯公式碎片、解答延续 → isQuestion=false。' +
+    '完整的数学题目（含题干） → isQuestion=true。';
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  let resp;
+  try {
+    resp = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: im.dataUrl } }
+          ]
+        }],
+        response_format: { type: 'json_object' }
+      }),
+      signal: ctrl.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await resp.json().catch(() => ({}));
   let result = extractJson(data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content);
   if (!result || typeof result !== 'object') result = { isQuestion: true, isBlank: false, confidence: 0 };
@@ -213,8 +244,6 @@ async function classifyOne(im, model, apiKey) {
   result.isQuestion = result.isQuestion !== false;
   result.isBlank = !!result.isBlank;
   result.number = result.number && String(result.number).trim() ? String(result.number).trim() : null;
-  result.chapter = (typeof result.chapter === 'string' && AI_CHAPTERS.indexOf(result.chapter) >= 0) ? result.chapter : null;
-  result.type = AI_TYPES.indexOf(result.type) >= 0 ? result.type : 'solve';
   result.confidence = typeof result.confidence === 'number' ? Math.min(1, Math.max(0, result.confidence)) : 0.5;
   return result;
 }
@@ -226,7 +255,7 @@ async function handleAiClassify(req, res) {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   if (!apiKey) return sendJSON(res, 500, { error: 'DASHSCOPE_API_KEY not set' });
   const model = process.env.DASHSCOPE_MODEL || 'qwen-vl-plus';
-  const CONC = 5; // 并发上限
+  const CONC = 8; // 并发上限
   const results = [];
   for (let i = 0; i < images.length; i += CONC) {
     const batch = images.slice(i, i + CONC);

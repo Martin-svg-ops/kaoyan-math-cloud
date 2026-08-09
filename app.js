@@ -1612,15 +1612,35 @@
 
   // 把裁图降采样后发给 /api/ai-classify，返回 { id: result }
   async function aiClassifyQuestions(questions) {
-    const payload = [];
+    // 1) 本地预过滤：用 PDF 文本层信息先干掉明显不是题目的块，省 AI 调用
+    const toAi = [];
+    const localFiltered = [];
     for (const q of questions) {
-      const small = await downScaleDataUrl(q.img, 768, 0.7);
-      payload.push({ id: q.id, dataUrl: small });
+      const t = (q._text || '').trim();
+      const cjk = (t.match(/[一-龥]/g) || []).length;
+      // 明显非题目：纯数字/页码/极短无汉字/图注/解答延续
+      const isNoise = !t || /^[0-9\s]+$/.test(t) || /^第\s*\d+\s*页/.test(t) ||
+        (t.length < 8 && cjk < 2) || (/^(图|表)\s*\d/.test(t) && t.length < 22) ||
+        /^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t) ||
+        /^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t);
+      if (isNoise) { localFiltered.push(q.id); }
+      else { toAi.push(q); }
     }
+    if (localFiltered.length) {
+      toast('本地预过滤 ' + localFiltered.length + ' 张明显非题目');
+    }
+    if (!toAi.length) return {}; // 全被本地过滤了
+    // 2) 并行降采样（Promise.all 而非逐张 await）
+    setUploadStatus('AI 正在识别题目（0/' + toAi.length + '）…');
+    const payloads = await Promise.all(toAi.map(async (q) => {
+      const small = await downScaleDataUrl(q.img, 512, 0.65);
+      return { id: q.id, dataUrl: small, text: q._text || '' };
+    }));
+    // 3) 发给后端代理（后端会再做一轮文本预过滤 + 并发调 AI）
     const resp = await fetch('/api/ai-classify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: payload })
+      body: JSON.stringify({ images: payloads })
     });
     if (!resp.ok) {
       let msg = 'HTTP ' + resp.status;
@@ -1630,6 +1650,8 @@
     const data = await resp.json();
     const map = {};
     (data.results || []).forEach((r) => { if (r && r.id) map[r.id] = r; });
+    // 本地过滤的标记为非题目
+    localFiltered.forEach((id) => { map[id] = { id, isQuestion: false, isBlank: true, confidence: 1, localFilter: true }; });
     return map;
   }
 
@@ -1680,9 +1702,8 @@
               if (r && (r.isQuestion === false || r.isBlank)) { removed++; return; }
               if (r) {
                 if (!q.number) q.number = r.number || q.number;
-                if (r.chapter) q.chapter = r.chapter;
-                if (r.type) q.type = r.type;
               }
+              delete q._text; // 清理临时字段
               kept.push(q);
             });
             res.questions = kept;
@@ -1692,7 +1713,10 @@
             setUploadStatus('');
             console.warn('AI 识别失败，降级保留原切图', e);
             toast('AI 识别暂不可用（' + (e.message || e) + '），已保留原始切图');
+            res.questions.forEach((q) => delete q._text);
           }
+        } else {
+          res.questions.forEach((q) => delete q._text);
         }
         if (!res.questions.length) {
           toast('所有切图均被 AI 判定为非题目/空白，请关闭 AI 识别后重试，或检查 PDF 排版');
@@ -2280,7 +2304,8 @@
         return {
           id: uid('q'), bankId: '', number: num,
           type, chapter: classifyChapterByText(qText), difficulty: 3,
-          stem: '', options: [], answer: '', analysis: '', img: dataURL
+          stem: '', options: [], answer: '', analysis: '', img: dataURL,
+          _text: qText || ''
         };
       };
 
