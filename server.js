@@ -79,7 +79,7 @@ function seedAdmin() {
     const { salt, hash } = hashPW(pw);
     db.users.push({
       id: 'u_admin', username, salt, hash, isAdmin: true, createdAt: new Date().toISOString(),
-      added: [], deletedIds: []
+      added: [], deletedIds: [], wrongBooks: []
     });
     saveDB();
     console.log('[server] 已创建管理者账号  用户名: ' + username + '  密码: ' + pw);
@@ -329,7 +329,7 @@ async function handleApi(req, res, url) {
     if (password.length < 4) return sendJSON(res, 400, { error: '密码至少 4 位' });
     if (findUserByName(username)) return sendJSON(res, 409, { error: '用户名已存在' });
     const { salt, hash } = hashPW(password);
-    const user = { id: newSeq('u'), username, salt, hash, isAdmin: false, createdAt: new Date().toISOString(), added: [], deletedIds: [] };
+    const user = { id: newSeq('u'), username, salt, hash, isAdmin: false, createdAt: new Date().toISOString(), added: [], deletedIds: [], wrongBooks: [] };
     db.users.push(user);
     saveDB();
     const token = newToken();
@@ -357,7 +357,8 @@ async function handleApi(req, res, url) {
 
   // 当前用户
   if (p === '/api/me' && method === 'GET') {
-    return sendJSON(res, 200, { user: publicUser(me) });
+    me.wrongBooks = me.wrongBooks || [];
+    return sendJSON(res, 200, { user: publicUser(me), wrongBooks: me.wrongBooks });
   }
 
   // 登出
@@ -416,6 +417,86 @@ async function handleApi(req, res, url) {
       me.added[idx] = q;
       saveDB();
       return sendJSON(res, 200, { question: q });
+    }
+  }
+
+  // ── 错题本 API ──
+
+  // 获取所有错题本
+  if (p === '/api/wrong-books' && method === 'GET') {
+    me.wrongBooks = me.wrongBooks || [];
+    return sendJSON(res, 200, { wrongBooks: me.wrongBooks });
+  }
+
+  // 新建错题本
+  if (p === '/api/wrong-books' && method === 'POST') {
+    const b = await readBody(req);
+    const name = String(b.name || '').trim();
+    if (!name) return sendJSON(res, 400, { error: '错题本名称不能为空' });
+    me.wrongBooks = me.wrongBooks || [];
+    const wb = { id: newSeq('wb'), name, createdAt: new Date().toISOString(), entries: [] };
+    me.wrongBooks.push(wb);
+    saveDB();
+    return sendJSON(res, 200, { wrongBook: wb });
+  }
+
+  // 更新 / 删除错题本
+  const mWB = p.match(/^\/api\/wrong-books\/(.+)$/);
+  if (mWB) {
+    const wbId = decodeURIComponent(mWB[1]);
+    me.wrongBooks = me.wrongBooks || [];
+    const idx = me.wrongBooks.findIndex((wb) => wb.id === wbId);
+    if (idx < 0) return sendJSON(res, 404, { error: '错题本不存在' });
+
+    if (method === 'DELETE') {
+      me.wrongBooks.splice(idx, 1);
+      saveDB();
+      return sendJSON(res, 200, { ok: true });
+    }
+
+    if (method === 'PUT') {
+      const b = await readBody(req);
+      const wb = me.wrongBooks[idx];
+      if (b.name !== undefined) {
+        const name = String(b.name || '').trim();
+        if (!name) return sendJSON(res, 400, { error: '错题本名称不能为空' });
+        wb.name = name;
+      }
+      if (b.addEntries !== undefined) {
+        const add = Array.isArray(b.addEntries) ? b.addEntries : [];
+        wb.entries = wb.entries || [];
+        for (const e of add) {
+          const existIdx = wb.entries.findIndex((x) => x.qid === e.qid);
+          if (existIdx >= 0) {
+            wb.entries[existIdx].wrongCount = (wb.entries[existIdx].wrongCount || 0) + 1;
+            wb.entries[existIdx].lastAt = e.lastAt || new Date().toISOString();
+            wb.entries[existIdx].mastered = false;
+          } else {
+            wb.entries.push({
+              qid: e.qid,
+              wrongCount: e.wrongCount || 1,
+              lastAt: e.lastAt || new Date().toISOString(),
+              mastered: !!e.mastered
+            });
+          }
+        }
+      }
+      if (b.removeQids !== undefined) {
+        const remove = Array.isArray(b.removeQids) ? new Set(b.removeQids) : new Set();
+        wb.entries = (wb.entries || []).filter((x) => !remove.has(x.qid));
+      }
+      if (b.markMastered !== undefined) {
+        const qid = String(b.markMastered);
+        const entry = (wb.entries || []).find((x) => x.qid === qid);
+        if (entry) entry.mastered = true;
+      }
+      if (b.unmaster !== undefined) {
+        const qid = String(b.unmaster);
+        const entry = (wb.entries || []).find((x) => x.qid === qid);
+        if (entry) entry.mastered = false;
+      }
+      saveDB();
+      return sendJSON(res, 200, { wrongBook: wb });
     }
   }
 

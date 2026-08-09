@@ -1,5 +1,88 @@
 {
-  "users": [],
-  "sessions": {},
-  "seq": {}
+  "users": [
+    {
+      "id": "u_admin",
+      "username": "admin",
+      "salt": "61c899ddb6cc8f0d3484a25bde62e987",
+      "hash": "9596f9739cf3d7c9455c7d6d4285ac2d194bd335fb573d86eb950021d3609ce414d39f1a3087a16f9306867af45168d532ee4d1c987494866e13ff6383656e7a",
+      "isAdmin": true,
+      "createdAt": "2026-08-09T00:22:33.887Z",
+      "added": [],
+      "deletedIds": []
+    },
+    {
+      "id": "u_1_e3867d",
+      "username": "alice",
+      "salt": "25639c2ac6d7270678c881fd22a9e1b3",
+      "hash": "0c202491e168069f38be847137c7f2cc1b91bdb59153a740f62f55b91402c28d595b8347f9e6c9f2cd1aca781323b8e3f7c32ef53edcf9d945073b4ffe255d6a",
+      "isAdmin": false,
+      "createdAt": "2026-08-09T00:22:48.118Z",
+      "added": [
+        {
+          "id": "uq_1_d3c75a",
+          "bankId": "bank_880",
+          "number": "",
+          "type": "fill",
+          "chapter": "测试章节",
+          "difficulty": 3,
+          "stem": "\\int_0^1 x^2\\,dx = ?",
+          "answer": "\\frac13",
+          "options": [],
+          "analysis": ""
+        }
+      ],
+      "deletedIds": [
+        "b880_1"
+      ]
+    },
+    {
+      "id": "u_2_4dd9ea",
+      "username": "bob",
+      "salt": "9d287e846645672d9714b855102482fa",
+      "hash": "8cf29d1f204be9ca3af1a27e33613c731c2dda8bbce0027dccdee225d0d1e07ea3dd4735b32beca77e04eae3db68ee430038c9e84173451864869e2bee536153",
+      "isAdmin": false,
+      "createdAt": "2026-08-09T00:22:48.166Z",
+      "added": [
+        {
+          "id": "uq_2_278a1e",
+          "bankId": "bank_880",
+          "number": "",
+          "type": "fill",
+          "chapter": "X",
+          "difficulty": 2,
+          "stem": "bob only",
+          "answer": "42",
+          "options": [],
+          "analysis": ""
+        }
+      ],
+      "deletedIds": []
+    },
+    {
+      "id": "u_3_b48ee0",
+      "username": "Martin",
+      "salt": "86f4c6b5ed95e75b66f408e85af4624d",
+      "hash": "f1c3933fa3de10bd2064d4ac881fd55075a790674a688e5674527612fe0608c931feb610356fd1a1a0f8b1bfe57a8bba94e945028cd8a3565cff35b206ab031c",
+      "isAdmin": false,
+      "createdAt": "2026-08-09T00:26:30.833Z",
+      "added": [],
+      "deletedIds": []
+    }
+  ],
+  "sessions": {
+    "6db3cbb661ceacf2961af1f8bdfce8cfa99c5cf112025c91c344b6db708078fc": "u_1_e3867d",
+    "838d1febd6abeaae7ba5ab0fe309a375e216b294408df0389136ecacd9575331": "u_2_4dd9ea",
+    "8935a6c4def499a2e254266b9c6f87a9ec78c54931ddad05f26039428c3516cf": "u_admin",
+    "7fd40972f98e1a0b5033ac2e409e3f40d6ea5c909d0039a3aa9192b1f10ef34b": "u_admin",
+    "f0e4ba843e7c4015d291a3e8531ee21761b0c36ed86be1132e36800da394871d": "u_admin",
+    "4078e5530ed5475c93fb80057d75d3f474bf19e6c768fc0f050d1d1bb3cfe997": "u_admin",
+    "41ec25eb344b7b280266bd9b8b1a9d38ec3c3b1d23588ff528e235a77d6d0f6f": "u_admin",
+    "99a3976abac2e505303b2565bed7a682b9cef927f89deff09f1ba0604503d28f": "u_3_b48ee0",
+    "0720088c9607f1550f2912783fa4f786140f45aa5fa7cb84ea9d1dabef0719b0": "u_3_b48ee0",
+    "bba6111814f0a8971ff5cf55f8fdca8734dd8fe1472718396b8cb015d186c2de": "u_3_b48ee0"
+  },
+  "seq": {
+    "u": 3,
+    "uq": 2
+  }
 }

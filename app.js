@@ -553,7 +553,8 @@
       bank: bankWithIds,
       papers: [paper],
       attempts: [],
-      wrong: []
+      wrongBooks: [],
+      activeWrongBookId: ''
     };
   }
 
@@ -568,12 +569,25 @@
     const bank = (Array.isArray(d && d.bank) ? d.bank : [])
       .filter((q) => q && q.id && (q.stem || q.img))
       .map((q) => Object.assign({}, q, { bankId: q.bankId || 'bank_total', chapter: normalizeChapter(q.chapter) }));
+    // 错题本迁移：旧版 state.wrong (数组) → 新版 state.wrongBooks
+    let wrongBooks = Array.isArray(d && d.wrongBooks) ? d.wrongBooks : [];
+    if (!wrongBooks.length && Array.isArray(d && d.wrong) && d.wrong.length) {
+      const wbId = 'wb_default';
+      wrongBooks = [{
+        id: wbId,
+        name: '默认错题本',
+        createdAt: d.wrong[0].lastAt || new Date().toISOString(),
+        entries: d.wrong.map(function(w) { return { qid: w.qid, wrongCount: w.wrongCount || 1, lastAt: w.lastAt || '', mastered: !!w.mastered }; })
+      }];
+    }
+    const activeWrongBookId = (typeof d === 'object' && d && d.activeWrongBookId) || (wrongBooks.length ? wrongBooks[0].id : '');
     return {
       banks: banks,
       bank: bank,
       papers: Array.isArray(d && d.papers) ? d.papers : [],
       attempts: Array.isArray(d && d.attempts) ? d.attempts : [],
-      wrong: Array.isArray(d && d.wrong) ? d.wrong : []
+      wrongBooks: wrongBooks,
+      activeWrongBookId: activeWrongBookId
     };
   }
 
@@ -734,6 +748,11 @@
   let topTimer = { running: false, seconds: 0, handle: null };
 
   const bankFilter = { q: '', chapter: 'all', type: 'all', diff: 'all', bank: 'all', page: 0 };
+  let bankSelection = {}; // 题库管理页面题目选中状态 { qid: true }
+
+  function parseQids(json) {
+    try { return JSON.parse(json); } catch(e) { return []; }
+  }
   const browseFilter = { chapter: 'all', type: 'all', q: '', expanded: {}, page: 0, pageSize: 20 };
   const group = {
     title: '',
@@ -762,8 +781,46 @@
     { id: 'data', label: '数据', icon: 'database' }
   ];
 
+  // ── 错题本辅助函数 ──
+  function ensureDefaultWrongBook() {
+    if (!state.wrongBooks || !state.wrongBooks.length) {
+      state.wrongBooks = [{
+        id: 'wb_default',
+        name: '默认错题本',
+        createdAt: new Date().toISOString(),
+        entries: []
+      }];
+      state.activeWrongBookId = 'wb_default';
+    }
+    if (!state.activeWrongBookId || !state.wrongBooks.some(function(wb) { return wb.id === state.activeWrongBookId; })) {
+      state.activeWrongBookId = state.wrongBooks[0].id;
+    }
+  }
+  function getActiveWrongBook() {
+    ensureDefaultWrongBook();
+    return state.wrongBooks.find(function(wb) { return wb.id === state.activeWrongBookId; }) || state.wrongBooks[0];
+  }
+  function wrongEntries() {
+    var wb = getActiveWrongBook();
+    return (wb && wb.entries) || [];
+  }
+  function allWrongQids() {
+    var s = {};
+    (state.wrongBooks || []).forEach(function(wb) {
+      (wb.entries || []).forEach(function(e) { s[e.qid] = true; });
+    });
+    return s;
+  }
+  function totalPendingWrong() {
+    var n = 0;
+    (state.wrongBooks || []).forEach(function(wb) {
+      (wb.entries || []).forEach(function(e) { if (!e.mastered) n++; });
+    });
+    return n;
+  }
+
   function renderTabNav() {
-    const pending = state.wrong.filter((w) => !w.mastered).length;
+    const pending = totalPendingWrong();
     const wrongBadge = $('#wrongBadge');
     if (wrongBadge) {
       if (pending > 0) {
@@ -902,7 +959,8 @@
 
     el.innerHTML = '\n      <div class="page-head">\n        <div>\n          <h1 class="page-title">' + esc(chapterLabel) + '</h1>\n          <p class="page-desc">' + esc(typeLabel) + ' \u00b7 共 ' + list.length + ' 题</p>\n        </div>\n        <div class="head-actions">\n          <div class="search-wrap">' + icon('search') + '<input class="input" type="search" placeholder="\u641c\u7d22\u9898\u5e72\u3001\u7ae0\u8282\u6216\u89e3\u6790" data-browse-q value="' + esc(browseFilter.q) + '"></div>\n          <button class="btn' + (browseFilter.type !== 'all' ? '' : '') + '" data-action="browse-type-cycle" type="button">' + icon('layers') + esc(typeLabel) + '</button>\n        </div>\n      </div>\n      <div class="browse-stats">\n        <div class="browse-stat"><div class="browse-stat-label">\u603b\u9898\u6570</div><div class="browse-stat-value">' + list.length + '</div></div>\n        <div class="browse-stat"><div class="browse-stat-label">\u5355\u9009</div><div class="browse-stat-value">' + singleCount + '</div></div>\n        <div class="browse-stat"><div class="browse-stat-label">\u586b\u7a7a</div><div class="browse-stat-value">' + fillCount + '</div></div>\n        <div class="browse-stat"><div class="browse-stat-label">\u89e3\u7b54</div><div class="browse-stat-value">' + solveCount + '</div></div>\n      </div>\n      '; var totalPages = Math.max(1, Math.ceil(list.length / browseFilter.pageSize)); var page = Math.min(browseFilter.page, totalPages - 1); var pageItems = list.slice(page * browseFilter.pageSize, page * browseFilter.pageSize + browseFilter.pageSize); el.innerHTML += (pageItems.length ? pageItems.map(function(q, i) {
       var expanded = !!browseFilter.expanded[q.id];
-      var inWrong = state.wrong.some(function(w) { return w.qid === q.id; });
+      var wrongQids = allWrongQids();
+      var inWrong = wrongQids[q.id];
       var hasImg = !!q.img;
       var shortStem = hasImg ? '' : mathHTML(q.stem);
       var headStemHTML = hasImg ? '' : '<div class="qcard-stem' + (expanded ? '' : ' collapsed') + '">' + shortStem + '</div>';
@@ -924,8 +982,11 @@
   }
 
   function renderOverview(el) {
-    const pending = state.wrong.filter((w) => !w.mastered).length;
-    const mastered = state.wrong.filter((w) => w.mastered).length;
+    const pending = totalPendingWrong();
+    var allMastered = 0;
+    (state.wrongBooks || []).forEach(function(wb) {
+      (wb.entries || []).forEach(function(e) { if (e.mastered) allMastered++; });
+    });
     const chapters = unionChapters();
     const counts = chapters
       .map((c) => ({ chapter: c, count: state.bank.filter((q) => q.chapter === c).length }))
@@ -950,7 +1011,7 @@
         <div class="kpi"><div class="kpi-label">题库模块</div><div class="kpi-value">${state.banks.length}</div><div class="kpi-sub">总题库与上传题库</div></div>
         <div class="kpi"><div class="kpi-label">已组试卷</div><div class="kpi-value">${state.papers.length}</div><div class="kpi-sub">共练习 ${state.attempts.length} 次</div></div>
         <div class="kpi"><div class="kpi-label">待攻克错题</div><div class="kpi-value">${pending}</div><div class="kpi-sub">需要重做巩固</div></div>
-        <div class="kpi"><div class="kpi-label">已掌握错题</div><div class="kpi-value">${mastered}</div><div class="kpi-sub">完成复习闭环</div></div>
+        <div class="kpi"><div class="kpi-label">已掌握错题</div><div class="kpi-value">${allMastered}</div><div class="kpi-sub">完成复习闭环</div></div>
       </div>
       <div class="section">
         <h2 class="section-title">题库章节分布</h2>
@@ -1047,6 +1108,17 @@
         <select class="select" data-bank-diff style="width:130px"><option value="all">全部难度</option>${diffOptions}</select>
       </div>
       <div id="bankList"></div>`;
+    // 添加选中操作栏
+    var selectedCount = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; }).length;
+    if (selectedCount > 0) {
+      var selBar = document.createElement('div');
+      selBar.className = 'toolbar';
+      selBar.style.cssText = 'margin-top:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:10px';
+      selBar.innerHTML = '<span style="font-weight:600;color:#60a5fa">已选 ' + selectedCount + ' 题</span>' +
+        '<button class="btn btn-primary btn-sm" data-action="add-selected-to-wrong-book" type="button">' + icon('bookmark', 'icon-sm') + '加入错题本</button>' +
+        '<button class="btn btn-sm" data-action="clear-bank-selection" type="button">取消选择</button>';
+      el.appendChild(selBar);
+    }
     renderBankList();
     const zone = $('#uploadZone');
     if (zone) {
@@ -1126,18 +1198,23 @@
     }
     box.innerHTML = `
       <div class="table-wrap"><table class="table">
-        <thead><tr><th style="width:44%">题干</th><th>章节</th><th>题型</th><th>难度</th><th style="width:120px">操作</th></tr></thead>
-        <tbody>${rows.map((q) => `
-          <tr>
+        <thead><tr><th style="width:36px"><input type="checkbox" data-action="bank-select-all" title="全选/取消全选"></th><th style="width:42%">题干</th><th>章节</th><th>题型</th><th>难度</th><th style="width:120px">操作</th></tr></thead>
+        <tbody>${rows.map((q) => {
+          var checked = !!bankSelection[q.id];
+          return `
+          <tr class="${checked ? 'row-selected' : ''}">
+            <td><input type="checkbox" data-action="bank-select-one" data-qid="${esc(q.id)}" ${checked ? 'checked' : ''}></td>
             <td><div class="stem stem-line" title="${esc(q.stem)}">${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${stemMedia(q, 'q-img q-img-thumb')}</div></td>
             <td><div>${esc(bankNameById(q.bankId))}</div><div class="text-small">${esc(q.chapter)}</div></td>
             <td>${typeBadge(q.type)}</td>
             <td><span class="difficulty">${stars(q.difficulty)}</span></td>
             <td><div class="q-actions">
               <button class="btn btn-sm" data-action="edit-question" data-qid="${esc(q.id)}" type="button">${icon('pencil', 'icon-sm')}编辑</button>
+              <button class="btn btn-sm" data-action="add-to-wrong-from-bank" data-qid="${esc(q.id)}" type="button">${icon('bookmark', 'icon-sm')}错题本</button>
               <button class="btn btn-sm btn-danger" data-action="delete-question" data-qid="${esc(q.id)}" type="button">${icon('trash', 'icon-sm')}删除</button>
             </div></td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
         </tbody>
       </table></div>
       <div class="pagination">
@@ -1508,68 +1585,35 @@
   }
 
   function renderWrong(el) {
-    const all = state.wrong;
-    const pending = all.filter((w) => !w.mastered);
-    const mastered = all.filter((w) => w.mastered);
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const recent = all.filter((w) => w.lastAt && new Date(w.lastAt).getTime() >= sevenDaysAgo).length;
-    const chapters = unionChapters();
-    const chapterOptions = chapters.map((c) => '<option value="' + esc(c) + '"' + (wrongFilter.chapter === c ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
-    const typeOptions = Object.keys(TYPE_LABEL).map((t) => '<option value="' + t + '"' + (wrongFilter.type === t ? ' selected' : '') + '>' + TYPE_LABEL[t] + '</option>').join('');
-    const statusOptions = [['pending', '待攻克'], ['mastered', '已掌握'], ['all', '全部']]
-      .map(([v, label]) => '<option value="' + v + '"' + (wrongFilter.status === v ? ' selected' : '') + '>' + label + '</option>').join('');
+    ensureDefaultWrongBook();
+    var wb = getActiveWrongBook();
+    var all = wb.entries || [];
+    var pending = all.filter(function(w) { return !w.mastered; });
+    var mastered = all.filter(function(w) { return w.mastered; });
+    var sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    var recent = all.filter(function(w) { return w.lastAt && new Date(w.lastAt).getTime() >= sevenDaysAgo; }).length;
+    var chapters = unionChapters();
+    var chapterOptions = chapters.map(function(c) { return '<option value="' + esc(c) + '"' + (wrongFilter.chapter === c ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('');
+    var typeOptions = Object.keys(TYPE_LABEL).map(function(t) { return '<option value="' + t + '"' + (wrongFilter.type === t ? ' selected' : '') + '>' + TYPE_LABEL[t] + '</option>'; }).join('');
+    var statusOptions = [['pending', '待攻克'], ['mastered', '已掌握'], ['all', '全部']]
+      .map(function(kv) { return '<option value="' + kv[0] + '"' + (wrongFilter.status === kv[0] ? ' selected' : '') + '>' + kv[1] + '</option>'; }).join('');
 
-    const list = all.filter((w) => {
+    // 错题本选择器 HTML
+    var bookSelectorHTML = (state.wrongBooks || []).map(function(bk) {
+      return '<button class="tab-item' + (bk.id === state.activeWrongBookId ? ' active' : '') + '" data-action="switch-wrong-book" data-wbid="' + esc(bk.id) + '" type="button">' + esc(bk.name) + '</button>';
+    }).join('');
+
+    var list = all.filter(function(w) {
       if (wrongFilter.status === 'pending' && w.mastered) return false;
       if (wrongFilter.status === 'mastered' && !w.mastered) return false;
-      const q = qById(w.qid);
+      var q = qById(w.qid);
       if (!q) return false;
       if (wrongFilter.chapter !== 'all' && q.chapter !== wrongFilter.chapter) return false;
       if (wrongFilter.type !== 'all' && q.type !== wrongFilter.type) return false;
       return true;
     });
 
-    el.innerHTML = `
-      <div class="page-head">
-        <div>
-          <h1 class="page-title">错题本</h1>
-          <p class="page-desc">练习中答错的题目自动收录，重做正确后可标记掌握</p>
-        </div>
-        <div class="head-actions">
-          <button class="btn btn-primary" data-action="export-wrong-pdf" type="button">${icon('download')}导出PDF</button>
-        </div>
-      </div>
-      <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-label">待攻克</div><div class="kpi-value">${pending.length}</div><div class="kpi-sub">需要优先复习</div></div>
-        <div class="kpi"><div class="kpi-label">已掌握</div><div class="kpi-value">${mastered.length}</div><div class="kpi-sub">已完成复习闭环</div></div>
-        <div class="kpi"><div class="kpi-label">错题总数</div><div class="kpi-value">${all.length}</div><div class="kpi-sub">按题目去重统计</div></div>
-        <div class="kpi"><div class="kpi-label">近 7 天新增</div><div class="kpi-value">${recent}</div><div class="kpi-sub">最近一次出错时间</div></div>
-      </div>
-      <div class="toolbar">
-        <select class="select" data-wrong-status style="width:140px">${statusOptions}</select>
-        <select class="select" data-wrong-chapter style="width:180px"><option value="all">全部章节</option>${chapterOptions}</select>
-        <select class="select" data-wrong-type style="width:130px"><option value="all">全部题型</option>${typeOptions}</select>
-      </div>
-      <div id="wrongList">
-        ${list.length ? list.map((w) => {
-          const q = qById(w.qid);
-          return `
-            <div class="q-row">
-              <div class="q-main">
-                <div class="stem stem-line">${stemMedia(q, 'q-img q-img-thumb')}</div>
-                <div class="q-meta">${typeBadge(q.type)}<span>${esc(q.chapter)}</span>${q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : ''}<span class="difficulty">${stars(q.difficulty)}</span><span class="badge ${w.mastered ? 'badge-green' : 'badge-red'}">错 ${w.wrongCount} 次</span><span>${fmtDate(w.lastAt)}</span></div>
-                ${w.mastered ? '<div class="wrong-stat">' + icon('check-circle') + '已标记掌握</div>' : ''}
-              </div>
-              <div class="q-actions">
-                <button class="btn btn-primary" data-action="redo-wrong" data-qid="${esc(q.id)}" type="button">${icon('refresh')}重做</button>
-                ${w.mastered
-                  ? '<button class="btn" data-action="unmaster" data-qid="' + esc(q.id) + '" type="button">恢复待攻克</button>'
-                  : '<button class="btn" data-action="mark-master" data-qid="' + esc(q.id) + '" type="button">标为掌握</button>'}
-                <button class="btn btn-danger" data-action="remove-wrong" data-qid="${esc(q.id)}" type="button">${icon('trash', 'icon-sm')}移除</button>
-              </div>
-            </div>`;
-        }).join('') : '<div class="panel"><div class="empty-state">' + icon('check-circle') + '<div>这个筛选条件下没有错题</div></div></div>'}
-      </div>`;
+    el.innerHTML = '\n      <div class="page-head">\n        <div>\n          <h1 class="page-title">错题本</h1>\n          <p class="page-desc">练习中答错的题目自动收录，支持多个错题本分类管理</p>\n        </div>\n        <div class="head-actions">\n          <button class="btn btn-primary" data-action="export-wrong-pdf" type="button">' + icon('download') + '导出PDF</button>\n          <button class="btn" data-action="new-wrong-book" type="button">' + icon('plus') + '新建错题本</button>\n          ' + (state.wrongBooks.length > 1 ? '<button class="btn btn-ghost" data-action="delete-wrong-book" data-wbid="' + esc(wb.id) + '" type="button">' + icon('trash', 'icon-sm') + '删除本册</button>' : '') + '\n          ' + (wb.name !== '默认错题本' ? '<button class="btn btn-ghost" data-action="rename-wrong-book" data-wbid="' + esc(wb.id) + '" type="button">' + icon('pencil', 'icon-sm') + '重命名</button>' : '') + '\n        </div>\n      </div>\n      <div class="wrong-book-tabs" style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">\n        ' + bookSelectorHTML + '\n      </div>\n      <div class="kpi-grid">\n        <div class="kpi"><div class="kpi-label">待攻克</div><div class="kpi-value">' + pending.length + '</div><div class="kpi-sub">需要优先复习</div></div>\n        <div class="kpi"><div class="kpi-label">已掌握</div><div class="kpi-value">' + mastered.length + '</div><div class="kpi-sub">已完成复习闭环</div></div>\n        <div class="kpi"><div class="kpi-label">错题总数</div><div class="kpi-value">' + all.length + '</div><div class="kpi-sub">当前错题本</div></div>\n        <div class="kpi"><div class="kpi-label">近 7 天新增</div><div class="kpi-value">' + recent + '</div><div class="kpi-sub">最近一次出错时间</div></div>\n      </div>\n      <div class="toolbar">\n        <select class="select" data-wrong-status style="width:140px">' + statusOptions + '</select>\n        <select class="select" data-wrong-chapter style="width:180px"><option value="all">全部章节</option>' + chapterOptions + '</select>\n        <select class="select" data-wrong-type style="width:130px"><option value="all">全部题型</option>' + typeOptions + '</select>\n      </div>\n      <div id="wrongList">\n        ' + (list.length ? list.map(function(w) {\n          var q = qById(w.qid);\n          return '\n            <div class="q-row">\n              <div class="q-main">\n                <div class="stem stem-line">' + stemMedia(q, 'q-img q-img-thumb') + '</div>\n                <div class="q-meta">' + typeBadge(q.type) + '<span>' + esc(q.chapter) + '</span>' + (q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : '') + '<span class="difficulty">' + stars(q.difficulty) + '</span><span class="badge ' + (w.mastered ? 'badge-green' : 'badge-red') + '">错 ' + w.wrongCount + ' 次</span><span>' + fmtDate(w.lastAt) + '</span></div>\n                ' + (w.mastered ? '<div class="wrong-stat">' + icon('check-circle') + '已标记掌握</div>' : '') + '\n              </div>\n              <div class="q-actions">\n                <button class="btn btn-primary" data-action="redo-wrong" data-qid="' + esc(q.id) + '" type="button">' + icon('refresh') + '重做</button>\n                ' + (w.mastered\n                  ? '<button class="btn" data-action="unmaster" data-qid="' + esc(q.id) + '" type="button">恢复待攻克</button>'\n                  : '<button class="btn" data-action="mark-master" data-qid="' + esc(q.id) + '" type="button">标为掌握</button>') + '\n                <button class="btn btn-danger" data-action="remove-wrong" data-qid="' + esc(q.id) + '" type="button">' + icon('trash', 'icon-sm') + '移除</button>\n              </div>\n            </div>';\n        }).join('') : '<div class="panel"><div class="empty-state">' + icon('check-circle') + '<div>这个筛选条件下没有错题</div></div></div>') + '\n      </div>';
   }
 
   function renderData(el) {
@@ -2917,13 +2961,16 @@
   }
 
   function addWrongEntry(qid) {
-    const w = state.wrong.find((x) => x.qid === qid);
+    ensureDefaultWrongBook();
+    var wb = getActiveWrongBook();
+    wb.entries = wb.entries || [];
+    var w = wb.entries.find(function(x) { return x.qid === qid; });
     if (w) {
       w.wrongCount = (w.wrongCount || 0) + 1;
       w.lastAt = new Date().toISOString();
       w.mastered = false;
     } else {
-      state.wrong.push({ qid: qid, wrongCount: 1, lastAt: new Date().toISOString(), mastered: false });
+      wb.entries.push({ qid: qid, wrongCount: 1, lastAt: new Date().toISOString(), mastered: false });
     }
   }
 
@@ -3037,7 +3084,8 @@
   }
 
   function markMastered(qid) {
-    const w = state.wrong.find((x) => x.qid === qid);
+    var wb = getActiveWrongBook();
+    var w = (wb.entries || []).find(function(x) { return x.qid === qid; });
     if (w) {
       w.mastered = true;
       saveData();
@@ -3047,7 +3095,8 @@
   }
 
   function unmaster(qid) {
-    const w = state.wrong.find((x) => x.qid === qid);
+    var wb = getActiveWrongBook();
+    var w = (wb.entries || []).find(function(x) { return x.qid === qid; });
     if (w) {
       w.mastered = false;
       saveData();
@@ -3056,10 +3105,80 @@
   }
 
   function removeWrong(qid) {
-    state.wrong = state.wrong.filter((x) => x.qid !== qid);
+    var wb = getActiveWrongBook();
+    wb.entries = (wb.entries || []).filter(function(x) { return x.qid !== qid; });
     saveData();
     toast('已从错题本移除');
     render();
+  }
+
+  // ── 多错题本管理 ──
+
+  function createWrongBook(name) {
+    ensureDefaultWrongBook();
+    var id = 'wb_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    state.wrongBooks.push({ id: id, name: name, createdAt: new Date().toISOString(), entries: [] });
+    state.activeWrongBookId = id;
+    saveData();
+  }
+
+  function deleteWrongBook(wbId) {
+    state.wrongBooks = (state.wrongBooks || []).filter(function(wb) { return wb.id !== wbId; });
+    if (state.activeWrongBookId === wbId) {
+      state.activeWrongBookId = state.wrongBooks.length ? state.wrongBooks[0].id : '';
+    }
+    if (!state.wrongBooks.length) {
+      state.wrongBooks = [];
+      state.activeWrongBookId = '';
+    }
+    saveData();
+    toast('错题本已删除');
+    render();
+  }
+
+  function renameWrongBook(wbId, newName) {
+    var wb = state.wrongBooks.find(function(b) { return b.id === wbId; });
+    if (wb) {
+      wb.name = newName;
+      saveData();
+      toast('错题本已重命名');
+      render();
+    }
+  }
+
+  // 将指定 qid 加入指定错题本
+  function addQidToWrongBook(qid, wbId) {
+    ensureDefaultWrongBook();
+    var wb = state.wrongBooks.find(function(b) { return b.id === wbId; }) || getActiveWrongBook();
+    wb.entries = wb.entries || [];
+    var existing = wb.entries.find(function(e) { return e.qid === qid; });
+    if (existing) {
+      existing.wrongCount = (existing.wrongCount || 0) + 1;
+      existing.lastAt = new Date().toISOString();
+      existing.mastered = false;
+    } else {
+      wb.entries.push({ qid: qid, wrongCount: 1, lastAt: new Date().toISOString(), mastered: false });
+    }
+    saveData();
+  }
+
+  // 弹出选择错题本弹窗（用于单题加入）
+  function openWrongBookPicker(qid) {
+    ensureDefaultWrongBook();
+    var options = (state.wrongBooks || []).map(function(wb) {
+      return '<button class="btn btn-block" data-action="add-to-wrong-book" data-qid="' + esc(qid) + '" data-wbid="' + esc(wb.id) + '" type="button" style="margin-bottom:6px;justify-content:flex-start">' + icon('bookmark', 'icon-sm') + esc(wb.name) + '</button>';
+    }).join('');
+    openModal('\n      <div class="modal-head"><h2 class="modal-title">选择错题本</h2></div>\n      <div class="modal-body">\n        ' + (options || '<div class="empty-state">还没有错题本</div>') + '\n        <hr style="margin:12px 0;border-color:rgba(255,255,255,.08)">\n        <div class="field">\n          <label class="field-label">或新建错题本</label>\n          <div style="display:flex;gap:8px">\n            <input class="input" id="newWrongBookName" type="text" placeholder="输入错题本名称" style="flex:1">\n            <button class="btn btn-primary" data-action="new-wrong-book-and-add" data-qid="' + esc(qid) + '" type="button">新建并加入</button>\n          </div>\n        </div>\n      </div>\n      <div class="modal-foot">\n        <button class="btn" data-action="close-modal" type="button">取消</button>\n      </div>');
+  }
+
+  // 弹出批量选择错题本弹窗（用于题库管理批量加入）
+  function openBatchWrongBookPicker(qids) {
+    ensureDefaultWrongBook();
+    var idsJson = JSON.stringify(qids);
+    var options = (state.wrongBooks || []).map(function(wb) {
+      return '<button class="btn btn-block" data-action="batch-add-to-wrong-book" data-qids="' + esc(idsJson) + '" data-wbid="' + esc(wb.id) + '" type="button" style="margin-bottom:6px;justify-content:flex-start">' + icon('bookmark', 'icon-sm') + esc(wb.name) + '</button>';
+    }).join('');
+    openModal('\n      <div class="modal-head"><h2 class="modal-title">批量加入错题本（' + qids.length + ' 题）</h2></div>\n      <div class="modal-body">\n        <p>选择目标错题本：</p>\n        ' + (options || '<div class="empty-state">还没有错题本</div>') + '\n        <hr style="margin:12px 0;border-color:rgba(255,255,255,.08)">\n        <div class="field">\n          <label class="field-label">或新建错题本</label>\n          <div style="display:flex;gap:8px">\n            <input class="input" id="newWrongBookName" type="text" placeholder="输入错题本名称" style="flex:1">\n            <button class="btn btn-primary" data-action="new-wrong-book-and-batch-add" data-qids="' + esc(idsJson) + '" type="button">新建并加入</button>\n          </div>\n        </div>\n      </div>\n      <div class="modal-foot">\n        <button class="btn" data-action="close-modal" type="button">取消</button>\n      </div>');
   }
 
   function exportData() {
@@ -3217,7 +3336,8 @@
   }
 
   function exportWrongPDF() {
-    var list = state.wrong.filter(function(w) {
+    var wb = getActiveWrongBook();
+    var list = (wb.entries || []).filter(function(w) {
       var q = qById(w.qid);
       if (!q) return false;
       if (wrongFilter.status === 'pending' && w.mastered) return false;
@@ -3408,9 +3528,12 @@
     } else if (action === 'delete-bank-confirm') {
       const bankId = btn.dataset.param;
       state.bank = state.bank.filter((q) => q.bankId !== bankId);
-      state.wrong = state.wrong.filter((w) => {
-        const q = qById(w.qid);
-        return !q || q.bankId !== bankId;
+      // 从所有错题本中移除该题库的题目
+      (state.wrongBooks || []).forEach(function(wb) {
+        wb.entries = (wb.entries || []).filter(function(w) {
+          var q = qById(w.qid);
+          return !q || q.bankId !== bankId;
+        });
       });
       state.papers.forEach((p) => {
         p.qids = (p.qids || []).filter((x) => {
@@ -3434,14 +3557,18 @@
       if (auth.active) {
         apiDeleteQuestion(qid).then(function () {
           state.bank = state.bank.filter((q) => q.id !== qid);
-          state.wrong = state.wrong.filter((w) => w.qid !== qid);
+          (state.wrongBooks || []).forEach(function(wb) {
+            wb.entries = (wb.entries || []).filter(function(w) { return w.qid !== qid; });
+          });
           state.papers.forEach((p) => { p.qids = (p.qids || []).filter((x) => x !== qid); });
           closeModal(); toast('题目已删除'); render();
         }).catch(function (e) { toast('删除失败：' + ((e && e.message) || e)); });
         return;
       }
       state.bank = state.bank.filter((q) => q.id !== qid);
-      state.wrong = state.wrong.filter((w) => w.qid !== qid);
+      (state.wrongBooks || []).forEach(function(wb) {
+        wb.entries = (wb.entries || []).filter(function(w) { return w.qid !== qid; });
+      });
       state.papers.forEach((p) => {
         p.qids = (p.qids || []).filter((x) => x !== qid);
       });
@@ -3574,6 +3701,88 @@
       submitAuth();
     } else if (action === 'close-modal') {
       closeModal();
+    // ── 错题本管理 ──
+    } else if (action === 'switch-wrong-book') {
+      state.activeWrongBookId = btn.dataset.wbid;
+      saveData();
+      render();
+    } else if (action === 'new-wrong-book') {
+      openModal('\n        <div class="modal-head"><h2 class="modal-title">新建错题本</h2></div>\n        <div class="modal-body">\n          <div class="field">\n            <label class="field-label">错题本名称</label>\n            <input class="input" id="newWrongBookInput" type="text" placeholder="例：高数易错题、线代错题集" autofocus>\n          </div>\n        </div>\n        <div class="modal-foot">\n          <button class="btn" data-action="close-modal" type="button">取消</button>\n          <button class="btn btn-primary" data-action="create-wrong-book-confirm" type="button">创建</button>\n        </div>');
+    } else if (action === 'create-wrong-book-confirm') {
+      var input = document.getElementById('newWrongBookInput');
+      var name = input ? input.value.trim() : '';
+      if (!name) { toast('名称不能为空'); return; }
+      createWrongBook(name);
+      closeModal();
+      toast('错题本「' + name + '」已创建');
+      render();
+    } else if (action === 'delete-wrong-book') {
+      var wbId = btn.dataset.wbid;
+      if ((state.wrongBooks || []).length <= 1) { toast('至少保留一个错题本'); return; }
+      confirmModal('删除错题本', '删除后其中的错题将无法恢复。确定删除吗？', 'delete-wrong-book-confirm', wbId);
+    } else if (action === 'delete-wrong-book-confirm') {
+      deleteWrongBook(btn.dataset.param);
+      closeModal();
+    } else if (action === 'rename-wrong-book') {
+      var wbId2 = btn.dataset.wbid;
+      var wb2 = state.wrongBooks.find(function(b) { return b.id === wbId2; });
+      if (!wb2) return;
+      openModal('\n        <div class="modal-head"><h2 class="modal-title">重命名错题本</h2></div>\n        <div class="modal-body">\n          <div class="field">\n            <label class="field-label">新名称</label>\n            <input class="input" id="renameWrongBookInput" type="text" value="' + esc(wb2.name) + '" autofocus>\n          </div>\n        </div>\n        <div class="modal-foot">\n          <button class="btn" data-action="close-modal" type="button">取消</button>\n          <button class="btn btn-primary" data-action="rename-wrong-book-confirm" data-wbid="' + esc(wbId2) + '" type="button">确认</button>\n        </div>');
+    } else if (action === 'rename-wrong-book-confirm') {
+      var input2 = document.getElementById('renameWrongBookInput');
+      var name2 = input2 ? input2.value.trim() : '';
+      if (!name2) { toast('名称不能为空'); return; }
+      renameWrongBook(btn.dataset.wbid, name2);
+      closeModal();
+    // ── 加入错题本（单题/批量） ──
+    } else if (action === 'add-to-wrong-book') {
+      addQidToWrongBook(btn.dataset.qid, btn.dataset.wbid);
+      closeModal();
+      toast('已加入错题本');
+      render();
+    } else if (action === 'batch-add-to-wrong-book') {
+      var qids = parseQids(btn.dataset.qids);
+      qids.forEach(function(qid) { addQidToWrongBook(qid, btn.dataset.wbid); });
+      bankSelection = {};
+      closeModal();
+      toast('已将 ' + qids.length + ' 题加入错题本');
+      render();
+    } else if (action === 'new-wrong-book-and-add') {
+      createWrongBook('新建错题本');
+      addQidToWrongBook(btn.dataset.qid, state.activeWrongBookId);
+      closeModal();
+      toast('已加入错题本');
+      render();
+    } else if (action === 'new-wrong-book-and-batch-add') {
+      createWrongBook('新建错题本');
+      var qids2 = parseQids(btn.dataset.qids);
+      qids2.forEach(function(qid) { addQidToWrongBook(qid, state.activeWrongBookId); });
+      bankSelection = {};
+      closeModal();
+      toast('已将 ' + qids2.length + ' 题加入错题本');
+      render();
+    // ── 题库管理选择 ──
+    } else if (action === 'bank-select-all') {
+      var list = filterBank();
+      var allChecked = list.length > 0 && list.every(function(q) { return bankSelection[q.id]; });
+      if (allChecked) {
+        list.forEach(function(q) { bankSelection[q.id] = false; });
+      } else {
+        list.forEach(function(q) { bankSelection[q.id] = true; });
+      }
+      renderBankList();
+    } else if (action === 'bank-select-one') {
+      bankSelection[btn.dataset.qid] = btn.checked;
+      renderBankList();
+    } else if (action === 'add-selected-to-wrong-book') {
+      var selQids = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; });
+      if (!selQids.length) { toast('请先选择题目'); return; }
+      openBatchWrongBookPicker(selQids);
+    } else if (action === 'add-to-wrong-from-bank') {
+      openWrongBookPicker(btn.dataset.qid);
+    } else if (action === 'clear-bank-selection') {
+      bankSelection = {};
+      render();
     } else if (action === 'page') {
       bankFilter.page = Number(btn.dataset.page);
       renderBankList();
@@ -3599,14 +3808,8 @@
         typesetMath(card);
       }
     } else if (action === 'add-wrong') {
-      var qid2 = btn.dataset.qid;
-      var existing = state.wrong.find(function(w) { return w.qid === qid2; });
-      if (!existing) {
-        state.wrong.push({ qid: qid2, wrongCount: 1, lastAt: new Date().toISOString(), mastered: false });
-        saveData();
-        toast('已加入错题本');
-        render();
-      }
+      // 刷题页面：弹出选择错题本弹窗
+      openWrongBookPicker(btn.dataset.qid);
     } else if (action === 'browse-practice') {
       var qid3 = btn.dataset.qid;
       var q = qById(qid3);
@@ -3814,7 +4017,11 @@
     updateQuestion: function (token, id, q) { return this._req('PUT', '/api/questions/' + encodeURIComponent(id), q, token); },
     deleteQuestion: function (token, id) { return this._req('DELETE', '/api/questions/' + encodeURIComponent(id), null, token); },
     adminUsers: function (token) { return this._req('GET', '/api/admin/users', null, token); },
-    adminUserBank: function (token, id) { return this._req('GET', '/api/admin/users/' + encodeURIComponent(id) + '/bank', null, token); }
+    adminUserBank: function (token, id) { return this._req('GET', '/api/admin/users/' + encodeURIComponent(id) + '/bank', null, token); },
+    wrongBooks: function (token) { return this._req('GET', '/api/wrong-books', null, token); },
+    createWrongBook: function (token, name) { return this._req('POST', '/api/wrong-books', { name: name }, token); },
+    updateWrongBook: function (token, id, data) { return this._req('PUT', '/api/wrong-books/' + encodeURIComponent(id), data, token); },
+    deleteWrongBook: function (token, id) { return this._req('DELETE', '/api/wrong-books/' + encodeURIComponent(id), null, token); }
   };
 
   async function loadBankFromServer() {
@@ -3823,6 +4030,17 @@
     state.bank = d.bank;
     // 云端返回的题库可能不包含本地预置题库，合并回去，避免登录后 880/高数篇等预置题库消失
     ensurePreloadedBank(state);
+    // 加载云端错题本（合并到本地，云端优先）
+    try {
+      const wbResp = await API.wrongBooks(auth.token);
+      if (wbResp && Array.isArray(wbResp.wrongBooks) && wbResp.wrongBooks.length) {
+        state.wrongBooks = wbResp.wrongBooks;
+      }
+      ensureDefaultWrongBook();
+    } catch (e) {
+      ensureDefaultWrongBook();
+      console.warn('加载云端错题本失败，使用本地数据', e);
+    }
   }
 
   function renderUserBadge() {
@@ -3997,6 +4215,11 @@
           var me = await API.me(t);
           auth.token = t; auth.user = me.user;
           await loadBankFromServer();
+          // 加载云端错题本
+          if (me.wrongBooks && Array.isArray(me.wrongBooks) && me.wrongBooks.length) {
+            state.wrongBooks = me.wrongBooks;
+          }
+          ensureDefaultWrongBook();
           renderUserBadge();
           render();
           return;
