@@ -1622,6 +1622,9 @@
           return;
         }
         uploadParsed = { name: file.name, questions: res.questions, errors: res.errors, isImage: true, bankName: '' };
+        if (res.autoSplit && res.questions.length) {
+          toast('未检测到题号，已按题目间距自动切分为 ' + res.questions.length + ' 题，请检查切分是否准确');
+        }
         render();
       } catch (e) {
         setUploadStatus('');
@@ -1930,6 +1933,61 @@
     return markers;
   }
 
+  // 无题号时，按文本行的垂直空白把页面聚合成若干“题目块”。
+  // 思路：先把单词 boxes 拼成文本行，再按相邻行之间的空白高度聚类；
+  // 块间空白明显（> 行距两倍左右）即视为不同题目，从而把一页切成多题。
+  // 这比“整页兜底当一个题”精确，对无题号的练习册/讲义更友好。
+  function clusterQuestionBlocks(boxes, pageH) {
+    if (!boxes.length) return [];
+    // 1) 过滤水印行
+    const clean = boxes.filter((b) => !WATERMARK_KEYS.some((k) => b.text.indexOf(k) >= 0));
+    if (!clean.length) return [];
+    // 2) 聚合成文本行（y 向上坐标系，按 y1 接近度合并同一行）
+    const sorted = clean.slice().sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0);
+    const rows = [];
+    let cur = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      const b = sorted[i];
+      const last = cur[cur.length - 1];
+      if (Math.abs(b.y1 - last.y1) < 6) cur.push(b);
+      else { rows.push(cur); cur = [b]; }
+    }
+    rows.push(cur);
+    const rowInfos = rows.map((r) => {
+      let yTop = -Infinity, yBot = Infinity;
+      let text = '';
+      r.forEach((x) => { if (x.y1 > yTop) yTop = x.y1; if (x.y0 < yBot) yBot = x.y0; text += x.text + ' '; });
+      return { yTop: yTop, yBot: yBot, text: text.trim() };
+    });
+    // 3) 过滤页眉/页脚（页面顶/底 5% 且文本很短），避免被切成单独一题
+    const bodyRows = rowInfos.filter((r) => {
+      const cy = (r.yTop + r.yBot) / 2;
+      const inMargin = cy < pageH * 0.05 || cy > pageH * 0.95;
+      return !(inMargin && r.text.length < 24);
+    });
+    if (bodyRows.length < 2) return [];
+    // 4) 按相邻行空白聚类成块；阈值 = max(14pt, 行距中位数 * 2)
+    const gaps = [];
+    for (let i = 1; i < bodyRows.length; i++) gaps.push(bodyRows[i - 1].yBot - bodyRows[i].yTop);
+    gaps.sort((a, b) => a - b);
+    const medianGap = gaps[Math.floor(gaps.length / 2)] || 10;
+    const threshold = Math.max(14, medianGap * 2);
+    const blocks = [];
+    let block = { yTop: bodyRows[0].yTop, yBot: bodyRows[0].yBot, text: bodyRows[0].text };
+    for (let i = 1; i < bodyRows.length; i++) {
+      const gap = block.yBot - bodyRows[i].yTop;
+      if (gap > threshold) {
+        blocks.push(block);
+        block = { yTop: bodyRows[i].yTop, yBot: bodyRows[i].yBot, text: bodyRows[i].text };
+      } else {
+        block.yBot = bodyRows[i].yBot;
+        block.text += ' ' + bodyRows[i].text;
+      }
+    }
+    blocks.push(block);
+    return blocks;
+  }
+
   // 按考研数学大纲，将题目文本自动归类到对应模块（关键词加权打分，取最高分模块；无命中回退 PDF导入）
   const CHAPTER_RULES = [
     ['高等数学·函数极限连续', [['极限',1],['lim',2],['连续',1],['间断',2],['渐近线',2],['无穷小',1],['无穷大',1],['等价无穷',2],['洛必达',2],['夹逼',2],['单调有界',2],['定义域',2],['值域',2],['反函数',2],['复合函数',2],['有界',1],['保号',2],['重要极限',2],['左连续',2],['右连续',2],['偶函数',1],['奇函数',1],['周期',1]]],
@@ -2007,6 +2065,7 @@
     const doc = await pdfjs.getDocument({ data: u8.slice(0), disableFontFace: true, isEvalSupported: false }).promise;
     const questions = [];
     const errors = [];
+    let autoSplit = false;
     for (let p = 1; p <= doc.numPages; p++) {
       if (onProgress) onProgress(p, doc.numPages);
       const page = await doc.getPage(p);
@@ -2091,16 +2150,30 @@
           if (q) questions.push(q);
         }
       } else {
-        // 整页兜底：无题号 / 图片型 PDF（无文字层）也至少保留整页，避免整页丢失
-        let qText = '';
-        boxes.forEach((b) => { if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) qText += b.text + ' '; });
-        const q = doCrop(pageH, 0, qText, '(P' + p + ')', curType || 'solve');
-        if (q) questions.push(q);
+        // 无题号：先按文本行的垂直空白聚类成“题目块”，能切出多块就按块裁切；
+        // 只有聚类失败（整页基本连续一段）才整页兜底，避免把一页多题误当一个题。
+        const blocks = clusterQuestionBlocks(boxes, pageH);
+        if (blocks.length >= 2) {
+          autoSplit = true;
+          for (let bi = 0; bi < blocks.length; bi++) {
+            const blk = blocks[bi];
+            const topY = (bi === 0) ? pageH : Math.min(pageH, blk.yTop + vpad);
+            const botY = (bi + 1 < blocks.length) ? Math.max(0, blocks[bi + 1].yTop - vpad) : 0;
+            const q = doCrop(topY, botY, blk.text, '(P' + p + '-' + (bi + 1) + ')', curType || 'solve');
+            if (q) questions.push(q);
+          }
+        } else {
+          // 整页兜底：无题号且无法聚类 / 图片型 PDF（无文字层）也至少保留整页
+          let qText = '';
+          boxes.forEach((b) => { if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) qText += b.text + ' '; });
+          const q = doCrop(pageH, 0, qText, '(P' + p + ')', curType || 'solve');
+          if (q) questions.push(q);
+        }
       }
       await page.cleanup();
     }
     await doc.destroy();
-    return { questions, errors };
+    return { questions, errors, autoSplit };
   }
 
   function splitPdfOptionsLine(line) {
