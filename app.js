@@ -2382,7 +2382,11 @@
     opts = opts || {};
     var typeLabel = TYPE_LABEL[q.type] || '题目';
     var score = opts.score || DEFAULT_SCORE[q.type] || 4;
-    var html = '<div class="q-item">';
+    // 选择/填空：紧凑排版；解答题(大题)：预留作答空白
+    var itemCls = '';
+    if (q.type === 'single' || q.type === 'fill') itemCls = ' compact';
+    else if (q.type === 'solve') itemCls = ' with-blank';
+    var html = '<div class="q-item' + itemCls + '">';
     html += '<div class="q-line">';
     html += '<span class="q-num">' + (index + 1) + '.</span>';
     html += '<span class="q-type">[' + typeLabel + ']</span>';
@@ -2397,6 +2401,9 @@
         html += '<div class="q-opt"><span class="opt-label">' + labels[i] + '.</span> ' + mathHTML(q.options[i]) + '</div>';
       }
       html += '</div>';
+    }
+    if (q.type === 'solve') {
+      html += '<div class="q-blank"></div>';
     }
     if (opts.showAnswer && q.answer) {
       html += '<div class="q-answer"><span class="ans-label">【答案】</span>' + mathHTML(q.answer) + '</div>';
@@ -2433,6 +2440,11 @@
     html += '.q-stem-text { margin:4px 0 6px; font-size:13px; }';
     html += '.q-stem-text .math-render { display:inline; }';
     html += '.q-stem-text img { display:block; max-width:100%; height:auto; margin:2px 0; background:#fff; }';
+    html += '.q-item.compact { margin-bottom:6px; padding:5px 0; }';
+    html += '.q-item.compact .q-line { margin-bottom:1px; }';
+    html += '.q-item.compact .q-stem-text { margin:1px 0 2px; }';
+    html += '.q-item.compact .q-stem-text img { max-height:300px; width:auto; }';
+    html += '.q-item.with-blank .q-blank { min-height:140px; margin:10px 2px 4px; border:1px solid #cbd5e1; border-left:3px solid #94a3b8; background:repeating-linear-gradient(to bottom,#ffffff 0,#ffffff 31px,#eef2f7 31px,#eef2f7 32px); }';
     html += '.q-options { margin:4px 0 4px 20px; }';
     html += '.q-opt { margin:2px 0; font-size:13px; }';
     html += '.opt-label { font-weight:bold; margin-right:4px; }';
