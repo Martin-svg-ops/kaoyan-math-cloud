@@ -1934,9 +1934,12 @@
   }
 
   // 无题号时，按文本行的垂直空白把页面聚合成若干“题目块”。
-  // 思路：先把单词 boxes 拼成文本行，再按相邻行之间的空白高度聚类；
-  // 块间空白明显（> 行距两倍左右）即视为不同题目，从而把一页切成多题。
-  // 这比“整页兜底当一个题”精确，对无题号的练习册/讲义更友好。
+  // v50 改进：
+  //  1) 先识别噪声行（页眉/页脚/页码/图注/上一题解答延续/中间孤立短块），
+  //     并入最近的“真实行”，避免零星内容被单独切成一道“空题”；
+  //  2) 再对真实行组按垂直间距聚类，块间空白明显才切开；
+  //  3) 最终做一次最小质量过滤，丢弃几乎空白的块。
+  // 这比“整页兜底当一个题”精确，也比直接在块级去伪更稳定。
   function clusterQuestionBlocks(boxes, pageH) {
     if (!boxes.length) return [];
     // 1) 过滤水印行
@@ -1959,63 +1962,104 @@
       r.forEach((x) => { if (x.y1 > yTop) yTop = x.y1; if (x.y0 < yBot) yBot = x.y0; text += x.text + ' '; });
       return { yTop: yTop, yBot: yBot, text: text.trim() };
     });
-    // 3) 过滤页眉/页脚（页面顶/底 5% 且文本很短），避免被切成单独一题
-    const bodyRows = rowInfos.filter((r) => {
+    if (rowInfos.length < 2) return rowInfos;
+
+    // 3) 识别噪声行
+    const isNoise = (r) => {
+      const t = r.text;
+      const cjk = (t.match(/[一-龥]/g) || []).length;
       const cy = (r.yTop + r.yBot) / 2;
-      const inMargin = cy < pageH * 0.05 || cy > pageH * 0.95;
-      return !(inMargin && r.text.length < 24);
-    });
-    if (bodyRows.length < 2) return [];
-    // 4) 按相邻行空白聚类成块；阈值 = max(14pt, 行距中位数 * 2)
+      const inTopMargin = cy > pageH * 0.92;   // y 向上，顶部 y 大
+      const inBotMargin = cy < pageH * 0.06;   // 底部 y 小
+      // 页眉/页脚短标题或页码
+      if ((inTopMargin || inBotMargin) && t.length < 40 && cjk < 5) return true;
+      if (/^[0-9]+$/.test(t)) return true;
+      if (/^第\s*\d+\s*页/.test(t)) return true;
+      // 图注/表注
+      if (/^(图|表)\s*\d/.test(t) && t.length < 22) return true;
+      // 上一题解答的延续（不会是新题开头）
+      if (/^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t)) return true;
+      if (/^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t)) return true;
+      // 中间孤立短块：无题头信号且几乎无汉字
+      const hasQuestionSignal = /^(求|设|证明|证|已知|若|计算|讨论|确定|判断|试|求|设|证明)/.test(t) || /[?？]/.test(t);
+      if (t.length < 18 && cjk < 4 && !hasQuestionSignal) return true;
+      if (t.length < 32 && cjk < 2 && !hasQuestionSignal) return true;
+      return false;
+    };
+    const noiseFlags = rowInfos.map(isNoise);
+
+    // 4) 每个噪声行归属到最近的非噪声行（优先上一题，避免碎片被误判为新题）
+    const attached = new Array(rowInfos.length).fill(-1);
+    for (let i = 0; i < rowInfos.length; i++) {
+      if (!noiseFlags[i]) continue;
+      let prev = -1, next = -1;
+      for (let j = i - 1; j >= 0; j--) if (!noiseFlags[j]) { prev = j; break; }
+      for (let j = i + 1; j < rowInfos.length; j++) if (!noiseFlags[j]) { next = j; break; }
+      if (prev >= 0 && next >= 0) {
+        const dPrev = Math.abs(rowInfos[i].yBot - rowInfos[prev].yTop);
+        const dNext = Math.abs(rowInfos[next].yBot - rowInfos[i].yTop);
+        attached[i] = (dNext < dPrev * 0.6) ? next : prev;
+      } else if (prev >= 0) {
+        attached[i] = prev;
+      } else if (next >= 0) {
+        attached[i] = next;
+      }
+    }
+
+    // 5) 把噪声行合并到对应的真实行组
+    const groups = [];
+    for (let i = 0; i < rowInfos.length; i++) {
+      if (noiseFlags[i]) continue;
+      groups.push({ rows: [i], yTop: rowInfos[i].yTop, yBot: rowInfos[i].yBot, text: rowInfos[i].text });
+    }
+    if (!groups.length) return [];
+    const rowToGroup = new Array(rowInfos.length).fill(-1);
+    groups.forEach((g, gi) => { rowToGroup[g.rows[0]] = gi; });
+    for (let i = 0; i < rowInfos.length; i++) {
+      if (!noiseFlags[i] || attached[i] < 0) continue;
+      const gi = rowToGroup[attached[i]];
+      if (gi < 0) continue;
+      const g = groups[gi];
+      g.rows.push(i);
+      g.yTop = Math.max(g.yTop, rowInfos[i].yTop);
+      g.yBot = Math.min(g.yBot, rowInfos[i].yBot);
+      if (i < attached[i]) {
+        g.text = (rowInfos[i].text + ' ' + g.text).trim();
+      } else {
+        g.text = (g.text + ' ' + rowInfos[i].text).trim();
+      }
+    }
+
+    // 6) 按 y 坐标排序（上→下）
+    groups.sort((a, b) => b.yTop - a.yTop);
+
+    // 7) 按相邻组之间的垂直空白切分
     const gaps = [];
-    for (let i = 1; i < bodyRows.length; i++) gaps.push(bodyRows[i - 1].yBot - bodyRows[i].yTop);
+    for (let i = 1; i < groups.length; i++) gaps.push(groups[i - 1].yBot - groups[i].yTop);
     gaps.sort((a, b) => a - b);
-    // 阈值不能用“所有间距的中位数”——否则当页面只有两段文字、中间一道大空白时，
-    // 中位数本身就是那道大空白，阈值被撑大导致永远切不开。
-    // 这里取“最小间距”作为典型行距，并设上限，避免被题间大空白带偏。
     const minGap = gaps.length ? gaps[0] : 14;
     const baseline = Math.min(minGap, 36);
     const threshold = Math.max(18, baseline * 2.8);
     const blocks = [];
-    let block = { yTop: bodyRows[0].yTop, yBot: bodyRows[0].yBot, text: bodyRows[0].text };
-    for (let i = 1; i < bodyRows.length; i++) {
-      const gap = block.yBot - bodyRows[i].yTop;
+    let block = { yTop: groups[0].yTop, yBot: groups[0].yBot, text: groups[0].text };
+    for (let i = 1; i < groups.length; i++) {
+      const gap = block.yBot - groups[i].yTop;
       if (gap > threshold) {
         blocks.push(block);
-        block = { yTop: bodyRows[i].yTop, yBot: bodyRows[i].yBot, text: bodyRows[i].text };
+        block = { yTop: groups[i].yTop, yBot: groups[i].yBot, text: groups[i].text };
       } else {
-        block.yBot = bodyRows[i].yBot;
-        block.text += ' ' + bodyRows[i].text;
+        block.yBot = groups[i].yBot;
+        block.text += ' ' + groups[i].text;
       }
     }
     blocks.push(block);
-    // 后处理：合并“伪题块”。某些大空白处会残留零星标记（页码、图注、孤立数字等），
-    // 被误切成独立一题。这类块文字极少、几乎不含汉字，应并入相邻题块，
-    // 否则会凭空多出一道“空题”。首块（页眉）已在上一步被过滤，这里只向后并入上一题。
-    const merged = [];
-    for (let i = 0; i < blocks.length; i++) {
-      const b = blocks[i];
-      const t = (b.text || '').trim();
+
+    // 8) 最终过滤：删除几乎空白的块
+    return blocks.filter((b) => {
+      const t = b.text.trim();
       const cjk = (t.match(/[一-龥]/g) || []).length;
-      // 伪题块（应并入上一题）：
-      // ① 文字极少且几乎无汉字（大空白里的页码/孤立数字/零碎标记）；
-      // ② 短且以“图/表”开头（图注，几乎不会是新题开头；注意“如图”是真题，故限短文本）；
-      // ③ 以“解：/答：”开头（上一题的解答延续；注意“解不等式”是真题，故要求解后紧跟标点/空格）；
-      // ④ 以续写词开头（由/故/因/所以/则/综上/因此…）或证毕/证。 ——明显是上一题的解答延续，不是新题。
-      // 注意：不要以“证明/证/设/求”等判续写，因为它们本身就是一道新题的开头。
-      const isCaption = /^(图|表)/.test(t);
-      const isSolutionStart = /^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t);
-      const isContinuation = /^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t);
-      const isPhantom = (t.length < 12 && cjk < 3) || (t.length < 16 && isCaption) || isSolutionStart || isContinuation;
-      if (merged.length && isPhantom) {
-        // 并入上一题（区域与文字拼接）
-        merged[merged.length - 1].yBot = Math.min(merged[merged.length - 1].yBot, b.yBot);
-        merged[merged.length - 1].text = (merged[merged.length - 1].text + ' ' + t).trim();
-      } else {
-        merged.push(b);
-      }
-    }
-    return merged;
+      return t.length > 0 && (cjk >= 2 || t.length >= 10);
+    });
   }
 
   // 按考研数学大纲，将题目文本自动归类到对应模块（关键词加权打分，取最高分模块；无命中回退 PDF导入）
@@ -2180,11 +2224,12 @@
           if (q) questions.push(q);
         }
       } else {
-        // 无题号：先按文本行的垂直空白聚类成“题目块”，能切出多块就按块裁切；
-        // 只有聚类失败（整页基本连续一段）才整页兜底，避免把一页多题误当一个题。
+        // 无题号：先按文本行的垂直空白聚类成“题目块”，再按块裁切；
+        // 聚类失败（无文字层/全噪声）才整页兜底，避免把一页多题误当一个题，
+        // 也避免顶部标题/中间碎片被单独切成“空题”。
         const blocks = clusterQuestionBlocks(boxes, pageH);
-        if (blocks.length >= 2) {
-          autoSplit = true;
+        if (blocks.length >= 1) {
+          autoSplit = blocks.length >= 2;
           for (let bi = 0; bi < blocks.length; bi++) {
             const blk = blocks[bi];
             const topY = (bi === 0) ? pageH : Math.min(pageH, blk.yTop + vpad);
