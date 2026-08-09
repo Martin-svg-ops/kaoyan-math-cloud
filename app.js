@@ -3140,6 +3140,8 @@
     const d = await API.bank(auth.token);
     state.banks = d.banks;
     state.bank = d.bank;
+    // 云端返回的题库可能不包含本地预置题库，合并回去，避免登录后 880/高数篇等预置题库消失
+    ensurePreloadedBank(state);
   }
 
   function renderUserBadge() {
