@@ -386,7 +386,7 @@ async function handleApi(req, res, url) {
         customBanks.push({ id: q.bankId, name: q.bankName || q.bankId });
       }
     });
-    const banks = [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }, ...customBanks];
+    const banks = deletedSet.has(BASE.bankMeta.id) ? [...customBanks] : [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }, ...customBanks];
     return sendJSON(res, 200, {
       banks: banks,
       bank: effectiveBank(me),
