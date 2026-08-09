@@ -10,18 +10,6 @@
       "added": [],
       "deletedIds": [],
       "deletedBankIds": []
-    },
-    {
-      "id": "u_8_982497",
-      "username": "testv6",
-      "salt": "a2d74bbf7260e8168dd28b81f21d0a14",
-      "hash": "3cc472ccbf4ae94c9b789bc3495541780241c0671f0139a02f8de9aa4c17ee69e26aa386906b3f6d38dff14a74ae45d50129594187d7634d89bd9569cf8e1a40",
-      "isAdmin": false,
-      "hasBaseBank": false,
-      "createdAt": "2026-08-09T15:18:49.844Z",
-      "added": [],
-      "deletedIds": [],
-      "wrongBooks": []
     }
   ],
   "sessions": {
@@ -45,9 +33,9 @@
     "ca1e86bdb85d505759fb9e9db98627fba209a7a9a62e1b2d2e8248a34c3fe301": "u_admin",
     "69f6a63ded9b0e965d0312d9a4d751a5d6d896f73be84979034e03b34d46fb04": "u_admin",
     "b4acbe3a7cc6a26c89a3fd5f9319d2d3a9209ffb65125e0e47c372b26077fe50": "u_admin",
-    "b2866f6f630c19ce37ca21ca37e38df215c4697e1fc169332dfd27ae3b0c632c": "u_8_982497",
     "88f442108d49550f36dec94efd786bed26aefde371e62734815e6a9a06140259": "u_admin",
-    "6bf8266dd1684aa5d443a4a92766e6d163ea3ba077fffc500eae8164cad17b46": "u_admin"
+    "6bf8266dd1684aa5d443a4a92766e6d163ea3ba077fffc500eae8164cad17b46": "u_admin",
+    "3b8f7c2221faf75b6e08f23d76ed321c94d2fcc5c2b4ade4c9e01828f23393a2": "u_admin"
   },
   "seq": {
     "u": 8,
