@@ -315,7 +315,7 @@ async function handleApi(req, res, url) {
 
   // 健康检查
   if (p === '/api/health' && method === 'GET') {
-    return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length, version: 'v62' });
+    return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length, version: 'v63' });
   }
 
   // AI 题目识别（通义千问 Qwen-VL 代理）。公开接口，无需登录。
@@ -578,6 +578,29 @@ async function handleApi(req, res, url) {
   if (p === '/api/admin/db-backup' && method === 'GET') {
     if (!me.isAdmin) return sendJSON(res, 403, { error: '需要管理者权限' });
     return sendJSON(res, 200, { db: db, baseCount: BASE.questions.length });
+  }
+
+  // 管理者：恢复数据库（覆盖当前 db，用于持久磁盘首次挂载后恢复数据）
+  if (p === '/api/admin/db-restore' && method === 'POST') {
+    if (!me.isAdmin) return sendJSON(res, 403, { error: '需要管理者权限' });
+    const b = await readBody(req);
+    if (!b || !b.db || !Array.isArray(b.db.users)) return sendJSON(res, 400, { error: '无效的备份数据' });
+    // 保留当前 admin 用户，合并其他用户数据
+    const keepAdmin = db.users.find((u) => u.isAdmin);
+    db = Object.assign({ users: [], sessions: {}, seq: {} }, b.db);
+    // 确保当前 admin 存在（磁盘挂载后自动生成的 admin 可能与备份不同）
+    if (keepAdmin) {
+      const bakAdminIdx = db.users.findIndex((u) => u.id === 'u_admin');
+      if (bakAdminIdx >= 0) {
+        // 保留当前 admin 的密码哈希（磁盘生成的），但恢复其题库权限
+        db.users[bakAdminIdx] = Object.assign({}, db.users[bakAdminIdx], {
+          salt: keepAdmin.salt, hash: keepAdmin.hash, hasBaseBank: true
+        });
+      }
+    }
+    saveDB();
+    console.log('[server] 数据库已从备份恢复，用户数: ' + db.users.length);
+    return sendJSON(res, 200, { ok: true, userCount: db.users.length });
   }
 
   return sendJSON(res, 404, { error: 'not found' });
