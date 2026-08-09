@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta name="description" content="考研数学题库、智能组卷与错题复习工具">
+  <meta name="theme-color" content="#1a2744">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="dark">
+  <meta name="apple-mobile-web-app-title" content="研数工坊">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>研数工坊 · 考研数学题库与组卷</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/pako.min.js"></script>
+  <script type="module" src="vendor/pdf-loader.mjs"></script>
+  <script src="data/880数一基础篇.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="btnSidebar" type="button" aria-label="切换侧栏">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div class="brand">
+          <span class="brand-mark">数</span>
+          <span class="brand-name">研数工坊</span>
+        </div>
+      </div>
+      <nav class="tab-nav" id="tabNav" aria-label="主导航"></nav>
+      <div class="topbar-right">
+        <button class="topbar-btn" id="btnTimer" type="button" title="计时训练">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>
+          <span class="timer-display" id="timerDisplay"></span>
+        </button>
+        <button class="topbar-btn topbar-wrong" id="btnWrongBook" type="button" title="错题本">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+          <span class="wrong-badge" id="wrongBadge" style="display:none">0</span>
+        </button>
+      </div>
+    </header>
+    <div class="body-wrap">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-tabs" id="sidebarTabs">
+          <button class="sidebar-tab active" data-sidebar-mode="chapter" type="button">考点汇总</button>
+          <button class="sidebar-tab" data-sidebar-mode="type" type="button">题型汇总</button>
+        </div>
+        <nav class="chapter-nav" id="chapterNav" aria-label="章节导航"></nav>
+        <div class="sidebar-foot">
+          <div class="storage-note">题库、试卷与错题均保存在本机浏览器</div>
+          <button class="btn btn-ghost btn-sm" id="btnData" type="button">数据备份与恢复</button>
+        </div>
+      </aside>
+      <main class="main">
+        <section class="content" id="content" aria-live="polite"></section>
+      </main>
+    </div>
+  </div>
+  <dialog class="modal" id="modal"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js?v=33"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js').then(function(reg) {
+          console.log('[PWA] Service Worker 已注册', reg.scope);
+        }).catch(function(err) {
+          console.warn('[PWA] Service Worker 注册失败', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

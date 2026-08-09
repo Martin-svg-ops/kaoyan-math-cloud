@@ -1,0 +1,8 @@
+# 运行时数据（各用户增删差异，不入库）
+server-data/
+# 穿透工具二进制（临时下载，勿提交）
+cloudflared.exe
+# 依赖与日志
+node_modules/
+*.log
+.DS_Store
