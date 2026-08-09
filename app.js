@@ -3560,7 +3560,7 @@
     });
   }
 
-  function handleAction(btn) {
+  async function handleAction(btn) {
     const action = btn.dataset.action;
     if (action === 'toggle-upload') {
       showUpload = !showUpload;
@@ -4269,7 +4269,6 @@
     if (p) p.value = '';
     if (e) e.textContent = '';
     view = 'browse';
-  }
   }
 
   async function apiSaveQuestion(q, qid) {

@@ -8,75 +8,8 @@
       "isAdmin": true,
       "createdAt": "2026-08-09T00:22:33.887Z",
       "added": [],
-      "deletedIds": []
-    },
-    {
-      "id": "u_1_e3867d",
-      "username": "alice",
-      "salt": "25639c2ac6d7270678c881fd22a9e1b3",
-      "hash": "0c202491e168069f38be847137c7f2cc1b91bdb59153a740f62f55b91402c28d595b8347f9e6c9f2cd1aca781323b8e3f7c32ef53edcf9d945073b4ffe255d6a",
-      "isAdmin": false,
-      "createdAt": "2026-08-09T00:22:48.118Z",
-      "added": [
-        {
-          "id": "uq_1_d3c75a",
-          "bankId": "bank_880",
-          "number": "",
-          "type": "fill",
-          "chapter": "测试章节",
-          "difficulty": 3,
-          "stem": "\\int_0^1 x^2\\,dx = ?",
-          "answer": "\\frac13",
-          "options": [],
-          "analysis": ""
-        }
-      ],
-      "deletedIds": [
-        "b880_1"
-      ]
-    },
-    {
-      "id": "u_2_4dd9ea",
-      "username": "bob",
-      "salt": "9d287e846645672d9714b855102482fa",
-      "hash": "8cf29d1f204be9ca3af1a27e33613c731c2dda8bbce0027dccdee225d0d1e07ea3dd4735b32beca77e04eae3db68ee430038c9e84173451864869e2bee536153",
-      "isAdmin": false,
-      "createdAt": "2026-08-09T00:22:48.166Z",
-      "added": [
-        {
-          "id": "uq_2_278a1e",
-          "bankId": "bank_880",
-          "number": "",
-          "type": "fill",
-          "chapter": "X",
-          "difficulty": 2,
-          "stem": "bob only",
-          "answer": "42",
-          "options": [],
-          "analysis": ""
-        }
-      ],
-      "deletedIds": []
-    },
-    {
-      "id": "u_3_b48ee0",
-      "username": "Martin",
-      "salt": "86f4c6b5ed95e75b66f408e85af4624d",
-      "hash": "f1c3933fa3de10bd2064d4ac881fd55075a790674a688e5674527612fe0608c931feb610356fd1a1a0f8b1bfe57a8bba94e945028cd8a3565cff35b206ab031c",
-      "isAdmin": false,
-      "createdAt": "2026-08-09T00:26:30.833Z",
-      "added": [],
-      "deletedIds": []
-    },
-    {
-      "id": "u_4_f9f731",
-      "username": "testuser",
-      "salt": "917846f790e788e89b2a081dbd181b8e",
-      "hash": "85e3d81d18b82d0403fdef6503228b942df9df19813bbd4403fedbbb3c82cdc905b0cf85259dfc63b76ab216b45232e4dc103cacdf8db74d71d6d988db4f2cec",
-      "isAdmin": false,
-      "createdAt": "2026-08-09T13:46:30.450Z",
-      "added": [],
-      "deletedIds": []
+      "deletedIds": [],
+      "deletedBankIds": []
     }
   ],
   "sessions": {
@@ -91,10 +24,17 @@
     "0720088c9607f1550f2912783fa4f786140f45aa5fa7cb84ea9d1dabef0719b0": "u_3_b48ee0",
     "bba6111814f0a8971ff5cf55f8fdca8734dd8fe1472718396b8cb015d186c2de": "u_3_b48ee0",
     "ae9b333cf8d13f2971464d4756b0992a0e5a33173812a053a4ec683c8265e417": "u_4_f9f731",
-    "7b1e78995f876e5cbd5aa4d6fd2ad24d6a30f15c69fb14abc4ae32901c37160b": "u_4_f9f731"
+    "7b1e78995f876e5cbd5aa4d6fd2ad24d6a30f15c69fb14abc4ae32901c37160b": "u_4_f9f731",
+    "8fa95751c44bca62788ff0fd38a1fc46bbc22040b086fee91f0ec2f8c91b61d0": "u_5_7ef7a3",
+    "9792905e32a4bc0ce3f1f3f5358ebaee8cc7745d280cdef3619421786fd21750": "u_5_7ef7a3",
+    "0dedad4ff9f1f13f37ae909659ea62ec0d0c39899093bc7ba36795ca76909984": "u_6_7dfc5f",
+    "60af06d9955d1470eddcd29989cff3aaf9053d0d7d9af8441f1f67856d43acd2": "u_6_7dfc5f",
+    "59d13b75f9072359437144bfabd4cf73f7ecc177acaa5de5d4b9c988b4dfb6bd": "u_admin",
+    "ca1e86bdb85d505759fb9e9db98627fba209a7a9a62e1b2d2e8248a34c3fe301": "u_admin",
+    "69f6a63ded9b0e965d0312d9a4d751a5d6d896f73be84979034e03b34d46fb04": "u_admin"
   },
   "seq": {
-    "u": 4,
+    "u": 7,
     "uq": 2
   }
 }
