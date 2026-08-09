@@ -1,6 +1,5 @@
-# 运行时数据（仅 db.json 纳入版本管理以在部署间保留用户数据）
+# 运行时数据（使用 Render 持久磁盘挂载，不再纳入版本管理）
 server-data/*
-!server-data/db.json
 # 穿透工具二进制（临时下载，勿提交）
 cloudflared.exe
 # 依赖与日志
