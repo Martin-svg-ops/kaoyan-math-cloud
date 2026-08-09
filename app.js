@@ -1970,8 +1970,12 @@
     const gaps = [];
     for (let i = 1; i < bodyRows.length; i++) gaps.push(bodyRows[i - 1].yBot - bodyRows[i].yTop);
     gaps.sort((a, b) => a - b);
-    const medianGap = gaps[Math.floor(gaps.length / 2)] || 10;
-    const threshold = Math.max(14, medianGap * 2);
+    // 阈值不能用“所有间距的中位数”——否则当页面只有两段文字、中间一道大空白时，
+    // 中位数本身就是那道大空白，阈值被撑大导致永远切不开。
+    // 这里取“最小间距”作为典型行距，并设上限，避免被题间大空白带偏。
+    const minGap = gaps.length ? gaps[0] : 14;
+    const baseline = Math.min(minGap, 36);
+    const threshold = Math.max(18, baseline * 2.8);
     const blocks = [];
     let block = { yTop: bodyRows[0].yTop, yBot: bodyRows[0].yBot, text: bodyRows[0].text };
     for (let i = 1; i < bodyRows.length; i++) {
@@ -1985,7 +1989,33 @@
       }
     }
     blocks.push(block);
-    return blocks;
+    // 后处理：合并“伪题块”。某些大空白处会残留零星标记（页码、图注、孤立数字等），
+    // 被误切成独立一题。这类块文字极少、几乎不含汉字，应并入相邻题块，
+    // 否则会凭空多出一道“空题”。首块（页眉）已在上一步被过滤，这里只向后并入上一题。
+    const merged = [];
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      const t = (b.text || '').trim();
+      const cjk = (t.match(/[一-龥]/g) || []).length;
+      // 伪题块（应并入上一题）：
+      // ① 文字极少且几乎无汉字（大空白里的页码/孤立数字/零碎标记）；
+      // ② 短且以“图/表”开头（图注，几乎不会是新题开头；注意“如图”是真题，故限短文本）；
+      // ③ 以“解：/答：”开头（上一题的解答延续；注意“解不等式”是真题，故要求解后紧跟标点/空格）；
+      // ④ 以续写词开头（由/故/因/所以/则/综上/因此…）或证毕/证。 ——明显是上一题的解答延续，不是新题。
+      // 注意：不要以“证明/证/设/求”等判续写，因为它们本身就是一道新题的开头。
+      const isCaption = /^(图|表)/.test(t);
+      const isSolutionStart = /^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t);
+      const isContinuation = /^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t);
+      const isPhantom = (t.length < 12 && cjk < 3) || (t.length < 16 && isCaption) || isSolutionStart || isContinuation;
+      if (merged.length && isPhantom) {
+        // 并入上一题（区域与文字拼接）
+        merged[merged.length - 1].yBot = Math.min(merged[merged.length - 1].yBot, b.yBot);
+        merged[merged.length - 1].text = (merged[merged.length - 1].text + ' ' + t).trim();
+      } else {
+        merged.push(b);
+      }
+    }
+    return merged;
   }
 
   // 按考研数学大纲，将题目文本自动归类到对应模块（关键词加权打分，取最高分模块；无命中回退 PDF导入）
