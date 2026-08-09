@@ -35,7 +35,41 @@
   </script>
   <script src="vendor/mathjax/tex-svg.js" id="MathJax-script" async></script>
   <script src="vendor/pako.min.js"></script>
-  <script type="module" src="vendor/pdf-loader.mjs"></script>
+  <!-- 兼容性垫片（必须最早执行，且内联不被缓存）：
+       pdf.js v5.6.205 使用了 Uint8Array.prototype.toHex 与
+       Map.prototype.getOrInsertComputed，部分旧版平板/移动端浏览器缺失，
+       表现为 "n.toHex is not a function" 或 "Setting up fake worker failed"。
+       内联注入可保证任何被缓存的旧版 vendor 文件运行时垫片已就绪。 -->
+  <script>
+    (function () {
+      try {
+        if (typeof Uint8Array !== 'undefined' && !Uint8Array.prototype.toHex) {
+          Object.defineProperty(Uint8Array.prototype, 'toHex', {
+            configurable: true, writable: true,
+            value: function () {
+              var s = '';
+              for (var i = 0; i < this.length; i++) {
+                s += this[i].toString(16).padStart(2, '0');
+              }
+              return s;
+            }
+          });
+        }
+        if (typeof Map !== 'undefined' && !Map.prototype.getOrInsertComputed) {
+          Object.defineProperty(Map.prototype, 'getOrInsertComputed', {
+            configurable: true, writable: true,
+            value: function (key, callback) {
+              if (this.has(key)) return this.get(key);
+              var value = callback(key, this);
+              this.set(key, value);
+              return value;
+            }
+          });
+        }
+      } catch (e) { /* 极少数环境原型不可写，交给 vendor 文件内的垫片兜底 */ }
+    })();
+  </script>
+  <script type="module" src="vendor/pdf-loader.mjs?v=44"></script>
   <script src="data/880数一基础篇.js?v=37"></script>
   <script src="data/gaoshu_jichu.js?v=37"></script>
   <script src="data/gaoshu_zonghe.js?v=37"></script>
@@ -84,7 +118,7 @@
   </div>
   <dialog class="modal" id="modal"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=43"></script>
+  <script src="app.js?v=44"></script>
   <script>
     /* 已关闭 service worker 离线缓存，避免旧缓存导致新题库不显示。
        如需离线能力，请改回注册并同步升级 sw.js 的 CACHE_NAME。 */
