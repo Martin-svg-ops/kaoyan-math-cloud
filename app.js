@@ -84,6 +84,9 @@
 
   function mathTex(text) {
     let t = String(text || '');
+    /* ASCII 变量+数字 → 上标：x2→x^{2}（数据里 x2 即 x 平方，x1 几乎不出现）。
+       排除：字母前是反斜杠(命令)或字母(避免把命令中间字母误判)。 */
+    t = t.replace(/(?<![\\a-zA-Z])([a-zA-Z])([0-9]+)/g, '$1^{$2}');
     t = t.replace(/lim_\{([^}]*)\}/g, '\\lim_{$1}');
     t = t.replace(/∑_\{([^}]*)\}\^\{([^}]*)\}/g, '\\sum_{$1}^{$2}');
     t = t.replace(/∑_\{([^}]*)\}/g, '\\sum_{$1}');
@@ -226,77 +229,92 @@
     return res;
   }
 
-  function katexRender(latex, displayMode) {
-    try {
-      return window.katex.renderToString(latex, {
-        displayMode: !!displayMode,
-        throwOnError: false,
-        trust: false,
-        strict: 'ignore',
-        output: 'htmlAndMathml'
-      });
-    } catch (e) {
-      return esc(latex);
-    }
+  function convertToLatex(t) {
+    /* 纯文本(无$定界符) → LaTeX。 */
+    t = t.replace(/&/g, '\\&');
+    t = t.replace(/#/g, '\\#');
+    t = t.replace(/</g, '\\lt ');
+    t = t.replace(/>/g, '\\gt ');
+    t = t.replace(/_{2,}/g, function (m) { return '\\_'.repeat(m.length); });
+    t = t.replace(/\^(?![{(0-9a-zA-Z])/g, '\\^');
+    t = mathTex(t);
+    t = normalizeMathFunctions(t);
+    /* 中文与中文标点包进 \text{} */
+    t = t.replace(/([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u2014\u2013\u2018\u2019\u201c\u201d]+)/g, '\\text{$1}');
+    return t;
   }
 
   function mathHTML(text) {
     var t = String(text || '');
     if (!t) return '';
-
-    /* 去除零宽字符(U+200B/U+200C/U+200D/U+FEFF)：PDF 提取常混入，KaTeX 无对应字模会报警告 */
+    /* 去除零宽字符 */
     t = t.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
-
-
-    /* New format: text contains $...$ or $$...$$ delimiters with raw LaTeX inside */
-    if (t.indexOf('$') !== -1) {
-      var parts = [];
-      var re = /(\$\$[^$]+\$\$|\$[^$]+\$)/g;
-      var lastEnd = 0;
-      var m;
-      while ((m = re.exec(t)) !== null) {
-        if (m.index > lastEnd) {
-          parts.push(esc(t.substring(lastEnd, m.index)));
-        }
-        var seg = m[0];
-        if (seg.slice(0, 2) === '$$') {
-          parts.push(katexRender(seg.slice(2, -2), true));
-        } else {
-          parts.push(katexRender(seg.slice(1, -1), false));
-        }
-        lastEnd = re.lastIndex;
-      }
-      if (lastEnd < t.length) {
-        parts.push(esc(t.substring(lastEnd)));
-      }
-      if (!parts.length) parts.push(esc(t));
-      return '<span class="math-render">' + parts.join('') + '</span>';
-    }
-
-    /* Old format: raw text without $ delimiters - convert Unicode → LaTeX, normalize functions, then render */
-    /* Step 0: 字面 \n(反斜杠+n 两字符, PDF 提取产生) → 真换行, 否则 KaTeX 会当未定义控制序列 \n 报错 */
+    /* 字面 \n → 真换行 */
     t = t.replace(/\\n/g, '\n');
-    /* Step 0b: 配平 PDF 提取产生的不平衡花括号(分段函数题干的 }} {{ 噪声) */
+    /* 已含 $ 定界符：直接交给 MathJax 解析（不整体再包 $） */
+    if (t.indexOf('$') !== -1) {
+      return '<span class="math-svg">' + esc(t) + '</span>';
+    }
+    /* 配平 PDF 提取产生的不平衡花括号 */
     t = balanceBraces(t);
-    /* Step 1: Escape only what truly breaks KaTeX:
-       - & # 始终是字面特殊符
-       - 连续下划线 _____ (填空横线) 转义为字面下划线；单个 _ 保留(作下标, 如 ∫∫_D, x₁)
-       - 孤立 ^ (不组成上标) 转义；^( ^{ ^digit ^letter 保留为上标 */
-    t = t.replace(/&/g, '\\&');
-    t = t.replace(/#/g, '\\#');
-    t = t.replace(/_{2,}/g, function (m) { return '\\_'.repeat(m.length); });
-    t = t.replace(/\^(?![{(0-9a-zA-Z])/g, '\\^');
-    /* Step 2: Convert Unicode math symbols to LaTeX commands */
-    t = mathTex(t);
-    /* Step 3: Normalize function names: sin→\sin, lim→\lim, ln→\ln ... (also handles attached letters like sinx→\sin x) */
-    t = normalizeMathFunctions(t);
-    /* Step 4: Wrap Chinese segments in \text{} */
-    t = t.replace(/([\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u2014\u2013\u2018\u2019\u201c\u201d]+)/g, '\\text{$1}');
-    return '<span class="math-render">' + katexRender(t, false) + '</span>';
+    var latex = convertToLatex(t);
+    return '<span class="math-svg">$' + esc(latex) + '$</span>';
   }
 
+  /* ---------- MathJax SVG 排版管线：公式渲染为矢量图（字体无关，永不乱码/显示错位） ---------- */
+  var _mjPending = [];
+  var _mjBatch = [];
+  var _mjScheduled = false;
+  function _mjQueue(node) {
+    if (!node || node.nodeType !== 1) return;
+    if (node.classList.contains('math-svg') && !node.classList.contains('mjx-done')) {
+      node.classList.add('mjx-done');
+      _mjBatch.push(node);
+    } else if (node.querySelectorAll) {
+      var found = node.querySelectorAll('.math-svg:not(.mjx-done)');
+      for (var i = 0; i < found.length; i++) { found[i].classList.add('mjx-done'); _mjBatch.push(found[i]); }
+    }
+    if (!_mjScheduled) { _mjScheduled = true; Promise.resolve().then(_mjFlushBatch); }
+  }
+  function _mjFlushBatch() {
+    _mjScheduled = false;
+    var batch = _mjBatch; _mjBatch = [];
+    if (!batch.length) return;
+    if (window.MathJax && MathJax.typesetPromise) {
+      MathJax.typesetPromise(batch).catch(function () {});
+    } else {
+      _mjPending = _mjPending.concat(batch);
+    }
+  }
+  window.__mjFlush = function () {
+    if (_mjPending.length && window.MathJax && MathJax.typesetPromise) {
+      MathJax.typesetPromise(_mjPending).catch(function () {});
+      _mjPending = [];
+    }
+  };
+  (function initMathJaxTypeset() {
+    var content = document.getElementById('content');
+    if (content) {
+      new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          var adds = muts[i].addedNodes;
+          for (var j = 0; j < adds.length; j++) _mjQueue(adds[j]);
+        }
+      }).observe(content, { childList: true, subtree: true });
+    }
+    var modal = document.getElementById('modal');
+    if (modal) {
+      new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          var adds = muts[i].addedNodes;
+          for (var j = 0; j < adds.length; j++) _mjQueue(adds[j]);
+        }
+      }).observe(modal, { childList: true, subtree: true });
+    }
+  })();
+
   function typesetMath(el) {
-    /* KaTeX renders synchronously via renderToString in mathHTML(), no post-processing needed */
+    /* 公式由 MutationObserver + MathJax 异步渲染为 SVG，此处无需处理 */
   }
 
   function uid(prefix) {

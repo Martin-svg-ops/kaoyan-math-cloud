@@ -748,21 +748,21 @@ button { cursor: pointer; }
 .math-stack { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 2px; line-height: 1.15; }
 .math-base { font-size: 1.08em; }
 .math-sub, .math-sup { font-size: 0.68em; color: var(--muted); }
-.math-render sup { font-size: 0.72em; vertical-align: super; }
-.math-render sub { font-size: 0.72em; vertical-align: sub; }
+.math-svg { display: inline-block; max-width: 100%; vertical-align: middle; }
+.math-svg mjx-container { outline: none; }
 
-/* ===== KaTeX integration ===== */
-.qcard-stem .katex,
-.qcard-option .katex,
-.qcard-answer .katex,
-.qcard-analysis .katex,
-.q-stem .katex { font-size: 1.05em; }
-.qcard-stem .katex-display,
-.qcard-answer .katex-display,
-.qcard-analysis .katex-display,
-.q-stem .katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
-.qcard-answer .math-render,
-.qcard-analysis .math-render { display: inline; }
+/* ===== MathJax SVG integration ===== */
+.qcard-stem mjx-container,
+.qcard-option mjx-container,
+.qcard-answer mjx-container,
+.qcard-analysis mjx-container,
+.q-stem mjx-container { font-size: 1.05em; }
+.qcard-answer .math-svg,
+.qcard-analysis .math-svg { display: inline; }
+.qcard-stem mjx-container[display="true"],
+.qcard-answer mjx-container[display="true"],
+.qcard-analysis mjx-container[display="true"],
+.q-stem mjx-container[display="true"] { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
 
 /* ===== Mobile responsive ===== */
 @media (max-width: 920px) {

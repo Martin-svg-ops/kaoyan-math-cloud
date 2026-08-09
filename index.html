@@ -14,8 +14,26 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <title>研数工坊 · 考研数学题库与组卷</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <script src="vendor/katex/katex.min.js"></script>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: true,
+        tags: 'none'
+      },
+      svg: { fontCache: 'local' },
+      startup: {
+        typeset: false,
+        ready: function () {
+          MathJax.startup.defaultReady();
+          if (window.__mjFlush) window.__mjFlush();
+        }
+      },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script src="vendor/mathjax/tex-svg.js" id="MathJax-script" async></script>
   <script src="vendor/pako.min.js"></script>
   <script type="module" src="vendor/pdf-loader.mjs"></script>
   <script src="data/880数一基础篇.js"></script>
@@ -63,7 +81,7 @@
   </div>
   <dialog class="modal" id="modal"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {

@@ -1,18 +1,12 @@
 /* 研数工坊 Service Worker — 离线缓存核心资源 */
-const CACHE_NAME = 'kaoyan-math-v33';
+const CACHE_NAME = 'kaoyan-math-v34';
 const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
-  './app.js?v=33',
+  './app.js?v=34',
   './data/880数一基础篇.js',
-  './vendor/katex/katex.min.js',
-  './vendor/katex/katex.min.css',
-  './vendor/katex/fonts/KaTeX_Main-Regular.woff2',
-  './vendor/katex/fonts/KaTeX_Math-Italic.woff2',
-  './vendor/katex/fonts/KaTeX_AMS-Regular.woff2',
-  './vendor/katex/fonts/KaTeX_Size1-Regular.woff2',
-  './vendor/katex/fonts/KaTeX_Size2-Regular.woff2',
+  './vendor/mathjax/tex-svg.js',
   './vendor/pako.min.js',
   './vendor/pdf-loader.mjs',
   './vendor/pdf.min.mjs',
