@@ -261,6 +261,33 @@
     return '<span class="math-svg">$' + esc(latex) + '$</span>';
   }
 
+  /* 题目主显示：有原书裁图则用图片（公式 100% 准确），否则回退到公式矢量图 */
+  function stemMedia(q, cls) {
+    q = q || {};
+    if (q.img) {
+      return '<img class="' + (cls || 'q-img') + '" src="' + esc(q.img) + '" alt="' +
+        esc((q.number || '题目') + ' 原书图片') + '" loading="lazy">';
+    }
+    return mathHTML(q.stem);
+  }
+
+  /* 点击题目缩略图打开放大灯箱 */
+  function openImageLightbox(src) {
+    var old = document.querySelector('.img-lightbox');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var box = document.createElement('div');
+    box.className = 'img-lightbox';
+    box.innerHTML = '<img src="' + esc(src) + '" alt="题目大图">';
+    box.addEventListener('click', function () { if (box.parentNode) box.parentNode.removeChild(box); });
+    document.body.appendChild(box);
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'IMG' && t.classList && t.classList.contains('q-img-thumb')) {
+      openImageLightbox(t.getAttribute('src'));
+    }
+  });
+
   /* ---------- MathJax SVG 排版管线：公式渲染为矢量图（字体无关，永不乱码/显示错位） ---------- */
   var _mjPending = [];
   var _mjBatch = [];
@@ -728,20 +755,23 @@
     el.innerHTML = '\n      <div class="page-head">\n        <div>\n          <h1 class="page-title">' + esc(chapterLabel) + '</h1>\n          <p class="page-desc">' + esc(typeLabel) + ' \u00b7 共 ' + list.length + ' 题</p>\n        </div>\n        <div class="head-actions">\n          <div class="search-wrap">' + icon('search') + '<input class="input" type="search" placeholder="\u641c\u7d22\u9898\u5e72\u3001\u7ae0\u8282\u6216\u89e3\u6790" data-browse-q value="' + esc(browseFilter.q) + '"></div>\n          <button class="btn' + (browseFilter.type !== 'all' ? '' : '') + '" data-action="browse-type-cycle" type="button">' + icon('layers') + esc(typeLabel) + '</button>\n        </div>\n      </div>\n      <div class="browse-stats">\n        <div class="browse-stat"><div class="browse-stat-label">\u603b\u9898\u6570</div><div class="browse-stat-value">' + list.length + '</div></div>\n        <div class="browse-stat"><div class="browse-stat-label">\u5355\u9009</div><div class="browse-stat-value">' + singleCount + '</div></div>\n        <div class="browse-stat"><div class="browse-stat-label">\u586b\u7a7a</div><div class="browse-stat-value">' + fillCount + '</div></div>\n        <div class="browse-stat"><div class="browse-stat-label">\u89e3\u7b54</div><div class="browse-stat-value">' + solveCount + '</div></div>\n      </div>\n      '; var totalPages = Math.max(1, Math.ceil(list.length / browseFilter.pageSize)); var page = Math.min(browseFilter.page, totalPages - 1); var pageItems = list.slice(page * browseFilter.pageSize, page * browseFilter.pageSize + browseFilter.pageSize); el.innerHTML += (pageItems.length ? pageItems.map(function(q, i) {
       var expanded = !!browseFilter.expanded[q.id];
       var inWrong = state.wrong.some(function(w) { return w.qid === q.id; });
-      var shortStem = mathHTML(q.stem);
-      var fullStem = mathHTML(q.stem);
+      var hasImg = !!q.img;
+      var shortStem = hasImg ? '' : mathHTML(q.stem);
+      var headStemHTML = hasImg ? '' : '<div class="qcard-stem' + (expanded ? '' : ' collapsed') + '">' + shortStem + '</div>';
+      var imgWrap = hasImg ? '<div class="qcard-imgwrap">' + stemMedia(q) + '</div>' : '';
       var optHTML = '';
       if (q.options && q.options.length) {
         var correctLetters = (q.answer || '').toUpperCase().split('').filter(function(c) { return c; });
         optHTML = '<div class="qcard-options">' + q.options.map(function(opt, oi) {
           var letter = String.fromCharCode(65 + oi);
           var isCorrect = correctLetters.indexOf(letter) >= 0;
-          return '<div class="qcard-option' + (isCorrect && expanded ? ' correct-opt' : '') + '"><span class="qcard-option-letter">' + letter + '.</span><span class="math-render">' + mathHTML(opt) + '</span></div>';
+          var optBody = hasImg ? '' : '<span class="math-render">' + mathHTML(opt) + '</span>';
+          return '<div class="qcard-option' + (hasImg ? ' qcard-option-img' : '') + (isCorrect && expanded ? ' correct-opt' : '') + '"><span class="qcard-option-letter">' + letter + '.</span>' + optBody + '</div>';
         }).join('') + '</div>';
       }
       var answerHTML = q.answer ? '<div class="qcard-answer"><span class="qcard-answer-label">\u53c2\u8003\u7b54\u6848</span>' + esc(q.answer) + '</div>' : '';
       var analysisHTML = q.analysis ? '<div class="qcard-analysis"><strong>\u89e3\u6790\uff1a</strong>' + mathHTML(q.analysis) + '</div>' : '';
-      return '<div class="qcard' + (expanded ? ' expanded' : '') + '" data-qid="' + esc(q.id) + '">\n        <div class="qcard-head" data-action="toggle-qcard" data-qid="' + esc(q.id) + '">\n          <span class="qcard-num">' + (page * browseFilter.pageSize + i + 1) + '</span>\n          <div class="qcard-stem' + (expanded ? '' : ' collapsed') + '">' + shortStem + '</div>\n          <div class="qcard-meta">' + typeBadge(q.type) + '<span class="difficulty">' + stars(q.difficulty) + '</span>' + (inWrong ? '<span class="badge badge-red">\u9519\u9898</span>' : '') + '</div>\n          <span class="qcard-chevron">' + icon('chevron-down') + '</span>\n        </div>\n        <div class="qcard-body">\n          ' + optHTML + '\n          ' + answerHTML + '\n          ' + analysisHTML + '\n          <div class="qcard-actions">\n            <button class="btn btn-sm ' + (inWrong ? 'btn-danger' : 'btn-primary') + '" data-action="' + (inWrong ? 'remove-wrong' : 'add-wrong') + '" data-qid="' + esc(q.id) + '" type="button">' + (inWrong ? icon('trash', 'icon-sm') + '\u79fb\u9664\u9519\u9898' : icon('bookmark', 'icon-sm') + '\u52a0\u5165\u9519\u9898\u672c') + '</button>\n            <button class="btn btn-sm" data-action="browse-practice" data-qid="' + esc(q.id) + '" type="button">' + icon('play', 'icon-sm') + '\u8ba1\u65f6\u7ec3\u4e60</button>\n          </div>\n        </div>\n      </div>';
+      return '<div class="qcard' + (expanded ? ' expanded' : '') + '" data-qid="' + esc(q.id) + '">\n        <div class="qcard-head" data-action="toggle-qcard" data-qid="' + esc(q.id) + '">\n          <span class="qcard-num">' + (page * browseFilter.pageSize + i + 1) + '</span>\n          ' + headStemHTML + '\n          <div class="qcard-meta">' + typeBadge(q.type) + '<span class="difficulty">' + stars(q.difficulty) + '</span>' + (inWrong ? '<span class="badge badge-red">\u9519\u9898</span>' : '') + '</div>\n          <span class="qcard-chevron">' + icon('chevron-down') + '</span>\n        </div>\n        ' + imgWrap + '\n        <div class="qcard-body">\n          ' + optHTML + '\n          ' + answerHTML + '\n          ' + analysisHTML + '\n          <div class="qcard-actions">\n            <button class="btn btn-sm ' + (inWrong ? 'btn-danger' : 'btn-primary') + '" data-action="' + (inWrong ? 'remove-wrong' : 'add-wrong') + '" data-qid="' + esc(q.id) + '" type="button">' + (inWrong ? icon('trash', 'icon-sm') + '\u79fb\u9664\u9519\u9898' : icon('bookmark', 'icon-sm') + '\u52a0\u5165\u9519\u9898\u672c') + '</button>\n            <button class="btn btn-sm" data-action="browse-practice" data-qid="' + esc(q.id) + '" type="button">' + icon('play', 'icon-sm') + '\u8ba1\u65f6\u7ec3\u4e60</button>\n          </div>\n        </div>\n      </div>';
     }).join('') : '<div class="empty-state">' + icon('search') + '<div>\u6ca1\u6709\u5339\u914d\u7684\u9898\u76ee</div></div>'); if (totalPages > 1) { el.innerHTML += '<div class="pagination">'; for (var p = 0; p < totalPages; p++) { el.innerHTML += '<button class="page-btn ' + (p === page ? 'active' : '') + '" data-action="browse-page" data-page="' + p + '" type="button">' + (p + 1) + '</button>'; } el.innerHTML += '</div>'; } el.innerHTML += '';
   }
 
@@ -945,7 +975,7 @@
         <thead><tr><th style="width:44%">题干</th><th>章节</th><th>题型</th><th>难度</th><th style="width:120px">操作</th></tr></thead>
         <tbody>${rows.map((q) => `
           <tr>
-            <td><div class="stem stem-line" title="${esc(q.stem)}">${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${mathHTML(q.stem)}</div></td>
+            <td><div class="stem stem-line" title="${esc(q.stem)}">${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${stemMedia(q, 'q-img q-img-thumb')}</div></td>
             <td><div>${esc(bankNameById(q.bankId))}</div><div class="text-small">${esc(q.chapter)}</div></td>
             <td>${typeBadge(q.type)}</td>
             <td><span class="difficulty">${stars(q.difficulty)}</span></td>
@@ -1091,7 +1121,7 @@
         <div class="q-row">
           <input type="checkbox" class="q-check" data-pick="${esc(q.id)}" ${inSel ? 'checked' : ''} aria-label="选择题目">
           <div class="q-main">
-            <div class="stem stem-line">${mathHTML(q.stem)}</div>
+            <div class="stem stem-line">${stemMedia(q, 'q-img q-img-thumb')}</div>
             <div class="q-meta">${typeBadge(q.type)}<span>${esc(q.chapter)}</span>${q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : ''}<span class="difficulty">${stars(q.difficulty)}</span>${inSel ? '<span class="badge badge-green">已加入</span>' : ''}</div>
           </div>
           <div class="q-actions"><button class="btn btn-sm" data-action="add-one" data-qid="${esc(q.id)}" type="button">${icon('plus', 'icon-sm')}加入</button></div>
@@ -1106,7 +1136,7 @@
       if (!q) return '';
       return `
         <div class="sel-item">
-          <div class="sel-title"><strong>${i + 1}.</strong> ${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${mathHTML(q.stem)}</div>
+          <div class="sel-title"><strong>${i + 1}.</strong> ${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${stemMedia(q, 'q-img q-img-thumb')}</div>
           <div class="sel-controls">
             ${typeBadge(q.type)}
             <input class="input input-sm score-input" type="number" min="1" max="30" value="${s.score}" data-sel-score="${i}" aria-label="第 ${i + 1} 题分值">
@@ -1208,7 +1238,7 @@
             <span class="difficulty">${stars(q.difficulty)}</span>
             <span class="q-score">${score} 分</span>
           </div>
-          <div class="q-stem">${mathHTML(q.stem)}</div>
+          <div class="q-stem">${stemMedia(q)}</div>
           ${answerControls(q)}
         </div>
         <div class="exam-nav">
@@ -1227,9 +1257,11 @@
       return '<div class="option-list">' + q.options.map((opt, i) => {
         const letter = String.fromCharCode(65 + i);
         const selected = multi ? (ans || '').includes(letter) : ans === letter;
-        return `<label class="option ${selected ? 'selected' : ''}">
+        const hasImg = !!q.img;
+        const optText = hasImg ? '' : `<span>${mathHTML(opt)}</span>`;
+        return `<label class="option ${selected ? 'selected' : ''} ${hasImg ? 'option-img' : ''}">
           <input type="${multi ? 'checkbox' : 'radio'}" name="ans_${q.id}" value="${letter}" data-answer-input data-qid="${q.id}" data-kind="${multi ? 'checkbox' : 'radio'}" ${selected ? 'checked' : ''}>
-          <span class="option-letter">${letter}</span><span>${mathHTML(opt)}</span>
+          <span class="option-letter">${letter}</span>${optText}
         </label>`;
       }).join('') + '</div>';
     }
@@ -1295,7 +1327,7 @@
             <span class="q-number">${i + 1}.</span>${typeBadge(q.type)}${badge}
             <span class="q-score">${score} 分</span>
           </div>
-          <div class="stem">${mathHTML(q.stem)}</div>
+          <div class="stem">${stemMedia(q)}</div>
           <div class="review-answer ${ansBox}"><strong>你的答案：</strong>${userAnswer}</div>
           <div class="review-answer"><strong>正确答案：</strong>${correctAnswer}</div>
           ${q.analysis ? '<div class="review-answer"><strong>解析：</strong>' + mathHTML(q.analysis) + '</div>' : ''}
@@ -1370,7 +1402,7 @@
           return `
             <div class="q-row">
               <div class="q-main">
-                <div class="stem stem-line">${mathHTML(q.stem)}</div>
+                <div class="stem stem-line">${stemMedia(q, 'q-img q-img-thumb')}</div>
                 <div class="q-meta">${typeBadge(q.type)}<span>${esc(q.chapter)}</span>${q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : ''}<span class="difficulty">${stars(q.difficulty)}</span><span class="badge ${w.mastered ? 'badge-green' : 'badge-red'}">错 ${w.wrongCount} 次</span><span>${fmtDate(w.lastAt)}</span></div>
                 ${w.mastered ? '<div class="wrong-stat">' + icon('check-circle') + '已标记掌握</div>' : ''}
               </div>
@@ -2356,12 +2388,12 @@
     html += '<span class="q-type">[' + typeLabel + ']</span>';
     if (opts.showScore) html += '<span class="q-score">(' + score + '分)</span>';
     html += '</div>';
-    html += '<div class="q-stem-text">' + mathHTML(q.stem) + '</div>';
+    html += '<div class="q-stem-text">' + stemMedia(q) + '</div>';
     if (q.options && q.options.length) {
       html += '<div class="q-options">';
       var labels = 'ABCDEFGH';
       for (var i = 0; i < q.options.length; i++) {
-        html += '<div class="q-opt"><span class="opt-label">' + labels[i] + '.</span> ' + mathHTML(q.options[i]) + '</div>';
+        html += '<div class="q-opt"><span class="opt-label">' + labels[i] + '.</span> ' + (q.img ? '' : mathHTML(q.options[i])) + '</div>';
       }
       html += '</div>';
     }
@@ -3230,7 +3262,7 @@
       var d = await API.adminUserBank(auth.token, uid);
       var uname = d.user ? d.user.username : '';
       var rows = (d.bank || []).map(function (q) {
-        return '<tr><td>' + typeBadge(q.type) + '</td><td><div class="stem stem-line">' + mathHTML(q.stem) + '</div></td>' +
+        return '<tr><td>' + typeBadge(q.type) + '</td><td><div class="stem stem-line">' + stemMedia(q, 'q-img q-img-thumb') + '</div></td>' +
           '<td>' + esc(q.chapter) + '</td><td>' + (q.answer ? esc(String(q.answer)) : '') + '</td></tr>';
       }).join('');
       var ub = document.getElementById('adminUserBank');

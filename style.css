@@ -764,6 +764,20 @@ button { cursor: pointer; }
 .qcard-analysis mjx-container[display="true"],
 .q-stem mjx-container[display="true"] { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
 
+  /* 题目原书裁图 */
+  .q-img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .q-stem .q-img { width: 100%; }
+  .qcard-imgwrap { padding: 6px 16px 0 54px; }
+  .qcard-imgwrap .q-img { width: 100%; }
+  .q-img-thumb { max-height: 72px; max-width: 240px; width: auto; height: auto; border-radius: 6px; border: 1px solid var(--line); background: #fff; cursor: zoom-in; vertical-align: middle; }
+  .qcard-option-img .qcard-option-letter,
+  .option-img .option-letter { font-size: 16px; font-weight: 700; min-width: 26px; }
+  .qcard-option-img { background: var(--surface); }
+  /* 图片灯箱 */
+  .img-lightbox { position: fixed; inset: 0; background: rgba(15,23,42,.82); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 24px; cursor: zoom-out; }
+  .img-lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; background: #fff; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  @media (max-width: 600px) { .qcard-imgwrap { padding-left: 16px; } }
+
 /* ===== Mobile responsive ===== */
 @media (max-width: 920px) {
   .sidebar-toggle { display: block; }
