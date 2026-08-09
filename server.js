@@ -66,7 +66,7 @@ function scheduleGitSync() {
     _gitSyncTimer = null;
     try {
       const token = process.env.GIT_TOKEN;
-      const repo = 'https://x-access-token:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+      const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
       execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
       try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); }
       catch (_) { /* 无变更，跳过 */ return; }
@@ -84,7 +84,7 @@ function initGit() {
     execSync('git config user.name "KaoyanMathSync"', { cwd: ROOT });
     if (process.env.GIT_TOKEN) {
       const token = process.env.GIT_TOKEN;
-      const repo = 'https://x-access-token:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+      const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
       try {
         execSync('git pull ' + repo + ' master -- server-data/db.json 2>&1', { cwd: ROOT, timeout: 15000 });
         console.log('[git] 已拉取远程 db.json');
@@ -648,7 +648,7 @@ async function handleApi(req, res, url) {
     const out = { hasToken: !!process.env.GIT_TOKEN, steps: [] };
     try {
       const token = process.env.GIT_TOKEN;
-      const repo = 'https://x-access-token:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+      const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
       out.steps.push('git config...');
       execSync('git config user.email "sync@kaoyan-math.local"', { cwd: ROOT });
       execSync('git config user.name "KaoyanMathSync"', { cwd: ROOT });
