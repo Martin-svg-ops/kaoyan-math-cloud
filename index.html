@@ -88,7 +88,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js').then(function(reg) {
+        navigator.serviceWorker.register('sw.js?v=35').then(function(reg) {
           console.log('[PWA] Service Worker 已注册', reg.scope);
         }).catch(function(err) {
           console.warn('[PWA] Service Worker 注册失败', err);

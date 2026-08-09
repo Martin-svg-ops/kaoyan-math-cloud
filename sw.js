@@ -1,11 +1,14 @@
 /* 研数工坊 Service Worker — 离线缓存核心资源 */
-const CACHE_NAME = 'kaoyan-math-v34';
+const CACHE_NAME = 'kaoyan-math-v35';
 const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
-  './app.js?v=34',
+  './app.js?v=35',
   './data/880数一基础篇.js',
+  './data/gaoshu_jichu.js',
+  './data/gaoshu_zonghe.js',
+  './data/gaoshu_tuozhan.js',
   './vendor/mathjax/tex-svg.js',
   './vendor/pako.min.js',
   './vendor/pdf-loader.mjs',
@@ -40,7 +43,10 @@ self.addEventListener('activate', event => {
   );
 });
 
-// 请求策略：核心资源 cache-first，其余 network-first 回退 cache
+// 请求策略：
+//  - 文档(index.html)走 network-first，始终拿到最新页面(含新题库脚本)
+//  - 核心静态资源 cache-first + 后台更新
+//  - 其余 network-first 回退 cache
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -50,7 +56,21 @@ self.addEventListener('fetch', event => {
   // API 请求不走缓存
   if (url.pathname.startsWith('/api/')) return;
 
-  // 核心静态资源：cache-first
+  // 文档请求：network-first，保证页面永远最新
+  if (req.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('/index.html')) {
+    event.respondWith(
+      fetch(req).then(resp => {
+        if (resp && resp.status === 200 && resp.type === 'basic') {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+        }
+        return resp;
+      }).catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // 核心静态资源：cache-first + 后台更新
   event.respondWith(
     caches.match(req).then(cached => {
       if (cached) {
