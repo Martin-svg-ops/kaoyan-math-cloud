@@ -1,6 +1,18 @@
 (function () {
   'use strict';
 
+  // pdf.js v5.6.205 的构建漏了 Uint8Array.prototype.toHex，
+  // getDocument 解析文档算 fingerprint 时会调用 n.toHex()，
+  // 在 worker 正常起的环境（如平板）抛 "n.toHex is not a function"。
+  // 这里在主线程补上；worker 线程的 polyfill 在 vendor/pdf.worker.min.mjs 头部。
+  if (typeof Uint8Array !== 'undefined' && !Uint8Array.prototype.toHex) {
+    Uint8Array.prototype.toHex = function () {
+      let s = '';
+      for (let i = 0; i < this.length; i++) s += this[i].toString(16).padStart(2, '0');
+      return s;
+    };
+  }
+
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 

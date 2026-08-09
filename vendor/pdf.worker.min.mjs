@@ -1,3 +1,4 @@
+if(typeof Uint8Array!=='undefined'&&!Uint8Array.prototype.toHex){Uint8Array.prototype.toHex=function(){let s='';for(let i=0;i<this.length;i++)s+=this[i].toString(16).padStart(2,'0');return s;};}
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page
