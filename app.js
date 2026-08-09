@@ -1613,7 +1613,69 @@
       return true;
     });
 
-    el.innerHTML = '\n      <div class="page-head">\n        <div>\n          <h1 class="page-title">错题本</h1>\n          <p class="page-desc">练习中答错的题目自动收录，支持多个错题本分类管理</p>\n        </div>\n        <div class="head-actions">\n          <button class="btn btn-primary" data-action="export-wrong-pdf" type="button">' + icon('download') + '导出PDF</button>\n          <button class="btn" data-action="new-wrong-book" type="button">' + icon('plus') + '新建错题本</button>\n          ' + (state.wrongBooks.length > 1 ? '<button class="btn btn-ghost" data-action="delete-wrong-book" data-wbid="' + esc(wb.id) + '" type="button">' + icon('trash', 'icon-sm') + '删除本册</button>' : '') + '\n          ' + (wb.name !== '默认错题本' ? '<button class="btn btn-ghost" data-action="rename-wrong-book" data-wbid="' + esc(wb.id) + '" type="button">' + icon('pencil', 'icon-sm') + '重命名</button>' : '') + '\n        </div>\n      </div>\n      <div class="wrong-book-tabs" style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">\n        ' + bookSelectorHTML + '\n      </div>\n      <div class="kpi-grid">\n        <div class="kpi"><div class="kpi-label">待攻克</div><div class="kpi-value">' + pending.length + '</div><div class="kpi-sub">需要优先复习</div></div>\n        <div class="kpi"><div class="kpi-label">已掌握</div><div class="kpi-value">' + mastered.length + '</div><div class="kpi-sub">已完成复习闭环</div></div>\n        <div class="kpi"><div class="kpi-label">错题总数</div><div class="kpi-value">' + all.length + '</div><div class="kpi-sub">当前错题本</div></div>\n        <div class="kpi"><div class="kpi-label">近 7 天新增</div><div class="kpi-value">' + recent + '</div><div class="kpi-sub">最近一次出错时间</div></div>\n      </div>\n      <div class="toolbar">\n        <select class="select" data-wrong-status style="width:140px">' + statusOptions + '</select>\n        <select class="select" data-wrong-chapter style="width:180px"><option value="all">全部章节</option>' + chapterOptions + '</select>\n        <select class="select" data-wrong-type style="width:130px"><option value="all">全部题型</option>' + typeOptions + '</select>\n      </div>\n      <div id="wrongList">\n        ' + (list.length ? list.map(function(w) {\n          var q = qById(w.qid);\n          return '\n            <div class="q-row">\n              <div class="q-main">\n                <div class="stem stem-line">' + stemMedia(q, 'q-img q-img-thumb') + '</div>\n                <div class="q-meta">' + typeBadge(q.type) + '<span>' + esc(q.chapter) + '</span>' + (q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : '') + '<span class="difficulty">' + stars(q.difficulty) + '</span><span class="badge ' + (w.mastered ? 'badge-green' : 'badge-red') + '">错 ' + w.wrongCount + ' 次</span><span>' + fmtDate(w.lastAt) + '</span></div>\n                ' + (w.mastered ? '<div class="wrong-stat">' + icon('check-circle') + '已标记掌握</div>' : '') + '\n              </div>\n              <div class="q-actions">\n                <button class="btn btn-primary" data-action="redo-wrong" data-qid="' + esc(q.id) + '" type="button">' + icon('refresh') + '重做</button>\n                ' + (w.mastered\n                  ? '<button class="btn" data-action="unmaster" data-qid="' + esc(q.id) + '" type="button">恢复待攻克</button>'\n                  : '<button class="btn" data-action="mark-master" data-qid="' + esc(q.id) + '" type="button">标为掌握</button>') + '\n                <button class="btn btn-danger" data-action="remove-wrong" data-qid="' + esc(q.id) + '" type="button">' + icon('trash', 'icon-sm') + '移除</button>\n              </div>\n            </div>';\n        }).join('') : '<div class="panel"><div class="empty-state">' + icon('check-circle') + '<div>这个筛选条件下没有错题</div></div></div>') + '\n      </div>';
+    var headHTML = '';
+    headHTML += '<div class="page-head">';
+    headHTML += '<div><h1 class="page-title">错题本</h1><p class="page-desc">练习中答错的题目自动收录，支持多个错题本分类管理</p></div>';
+    headHTML += '<div class="head-actions">';
+    headHTML += '<button class="btn btn-primary" data-action="export-wrong-pdf" type="button">' + icon('download') + '导出PDF</button>';
+    headHTML += '<button class="btn" data-action="new-wrong-book" type="button">' + icon('plus') + '新建错题本</button>';
+    if (state.wrongBooks.length > 1) {
+      headHTML += '<button class="btn btn-ghost" data-action="delete-wrong-book" data-wbid="' + esc(wb.id) + '" type="button">' + icon('trash', 'icon-sm') + '删除本册</button>';
+    }
+    if (wb.name !== '默认错题本') {
+      headHTML += '<button class="btn btn-ghost" data-action="rename-wrong-book" data-wbid="' + esc(wb.id) + '" type="button">' + icon('pencil', 'icon-sm') + '重命名</button>';
+    }
+    headHTML += '</div></div>';
+
+    var bookTabsHTML = '<div class="wrong-book-tabs" style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">' + bookSelectorHTML + '</div>';
+
+    var kpiHTML = '';
+    kpiHTML += '<div class="kpi-grid">';
+    kpiHTML += '<div class="kpi"><div class="kpi-label">待攻克</div><div class="kpi-value">' + pending.length + '</div><div class="kpi-sub">需要优先复习</div></div>';
+    kpiHTML += '<div class="kpi"><div class="kpi-label">已掌握</div><div class="kpi-value">' + mastered.length + '</div><div class="kpi-sub">已完成复习闭环</div></div>';
+    kpiHTML += '<div class="kpi"><div class="kpi-label">错题总数</div><div class="kpi-value">' + all.length + '</div><div class="kpi-sub">当前错题本</div></div>';
+    kpiHTML += '<div class="kpi"><div class="kpi-label">近 7 天新增</div><div class="kpi-value">' + recent + '</div><div class="kpi-sub">最近一次出错时间</div></div>';
+    kpiHTML += '</div>';
+
+    var toolbarHTML = '';
+    toolbarHTML += '<div class="toolbar">';
+    toolbarHTML += '<select class="select" data-wrong-status style="width:140px">' + statusOptions + '</select>';
+    toolbarHTML += '<select class="select" data-wrong-chapter style="width:180px"><option value="all">全部章节</option>' + chapterOptions + '</select>';
+    toolbarHTML += '<select class="select" data-wrong-type style="width:130px"><option value="all">全部题型</option>' + typeOptions + '</select>';
+    toolbarHTML += '</div>';
+
+    var listHTML = '';
+    if (list.length) {
+      var rowHTMLArr = [];
+      for (var i = 0; i < list.length; i++) {
+        var w = list[i];
+        var q = qById(w.qid);
+        var rowHTML = '';
+        rowHTML += '<div class="q-row"><div class="q-main">';
+        rowHTML += '<div class="stem stem-line">' + stemMedia(q, 'q-img q-img-thumb') + '</div>';
+        rowHTML += '<div class="q-meta">' + typeBadge(q.type) + '<span>' + esc(q.chapter) + '</span>';
+        if (q.number) { rowHTML += '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>'; }
+        rowHTML += '<span class="difficulty">' + stars(q.difficulty) + '</span>';
+        rowHTML += '<span class="badge ' + (w.mastered ? 'badge-green' : 'badge-red') + '">错 ' + w.wrongCount + ' 次</span>';
+        rowHTML += '<span>' + fmtDate(w.lastAt) + '</span></div>';
+        if (w.mastered) { rowHTML += '<div class="wrong-stat">' + icon('check-circle') + '已标记掌握</div>'; }
+        rowHTML += '</div><div class="q-actions">';
+        rowHTML += '<button class="btn btn-primary" data-action="redo-wrong" data-qid="' + esc(q.id) + '" type="button">' + icon('refresh') + '重做</button>';
+        if (w.mastered) {
+          rowHTML += '<button class="btn" data-action="unmaster" data-qid="' + esc(q.id) + '" type="button">恢复待攻克</button>';
+        } else {
+          rowHTML += '<button class="btn" data-action="mark-master" data-qid="' + esc(q.id) + '" type="button">标为掌握</button>';
+        }
+        rowHTML += '<button class="btn btn-danger" data-action="remove-wrong" data-qid="' + esc(q.id) + '" type="button">' + icon('trash', 'icon-sm') + '移除</button>';
+        rowHTML += '</div></div>';
+        rowHTMLArr.push(rowHTML);
+      }
+      listHTML = rowHTMLArr.join('');
+    } else {
+      listHTML = '<div class="panel"><div class="empty-state">' + icon('check-circle') + '<div>这个筛选条件下没有错题</div></div></div>';
+    }
+
+    el.innerHTML = headHTML + bookTabsHTML + kpiHTML + toolbarHTML + '<div id="wrongList">' + listHTML + '</div>';
   }
 
   function renderData(el) {
