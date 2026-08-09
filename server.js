@@ -435,6 +435,12 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { user: publicUser(target), bank: effectiveBank(target) });
   }
 
+  // 管理者：导出数据库备份（用于部署前保留用户数据）
+  if (p === '/api/admin/db-backup' && method === 'GET') {
+    if (!me.isAdmin) return sendJSON(res, 403, { error: '需要管理者权限' });
+    return sendJSON(res, 200, { db: db, baseCount: BASE.questions.length });
+  }
+
   return sendJSON(res, 404, { error: 'not found' });
 }
 

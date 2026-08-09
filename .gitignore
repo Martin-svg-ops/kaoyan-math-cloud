@@ -1,5 +1,6 @@
-# 运行时数据（各用户增删差异，不入库）
-server-data/
+# 运行时数据（仅 db.json 纳入版本管理以在部署间保留用户数据）
+server-data/*
+!server-data/db.json
 # 穿透工具二进制（临时下载，勿提交）
 cloudflared.exe
 # 依赖与日志
