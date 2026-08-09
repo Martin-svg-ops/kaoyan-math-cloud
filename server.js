@@ -642,6 +642,33 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { ok: true, userCount: db.users.length });
   }
 
+  // 调试：测试 git 同步
+  if (p === '/api/admin/git-debug' && method === 'GET') {
+    if (!me.isAdmin) return sendJSON(res, 403, { error: '需要管理者权限' });
+    const out = { hasToken: !!process.env.GIT_TOKEN, steps: [] };
+    try {
+      const token = process.env.GIT_TOKEN;
+      const repo = 'https://' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+      out.steps.push('git config...');
+      execSync('git config user.email "sync@kaoyan-math.local"', { cwd: ROOT });
+      execSync('git config user.name "KaoyanMathSync"', { cwd: ROOT });
+      out.steps.push('git add...');
+      execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
+      out.steps.push('git commit...');
+      try { execSync('git commit -m "data: debug"', { cwd: ROOT, timeout: 8000 }); out.steps.push('committed'); }
+      catch (_) { out.steps.push('nothing to commit'); return sendJSON(res, 200, out); }
+      out.steps.push('git push...');
+      const pushOut = execSync('git push ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
+      out.steps.push('PUSH OK: ' + String(pushOut).slice(0, 200));
+    } catch (e) {
+      out.error = String(e.message || e).slice(0, 400);
+      out.status = String(e.status || '');
+      out.stdout = String(e.stdout || '').slice(0, 200);
+      out.stderr = String(e.stderr || '').slice(0, 400);
+    }
+    return sendJSON(res, 200, out);
+  }
+
   return sendJSON(res, 404, { error: 'not found' });
 }
 
