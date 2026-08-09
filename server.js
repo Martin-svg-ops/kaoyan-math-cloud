@@ -125,7 +125,7 @@ function sendJSON(res, code, obj) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 5e6) reject(new Error('payload too large')); });
+    req.on('data', (c) => { data += c; if (data.length > 15e6) reject(new Error('payload too large')); });
     req.on('end', () => {
       if (!data) return resolve({});
       try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('invalid json')); }
@@ -162,6 +162,82 @@ function sanitizeQuestion(q) {
   };
 }
 
+/* ---------- AI 题目识别（通义千问 Qwen-VL 代理）---------- */
+const AI_CHAPTERS = [
+  '高等数学·函数极限连续', '高等数学·一元函数微分学', '高等数学·一元函数积分学',
+  '高等数学·多元函数微分学', '高等数学·多元函数积分学', '高等数学·无穷级数',
+  '高等数学·常微分方程', '线性代数·行列式', '线性代数·矩阵', '线性代数·向量',
+  '线性代数·线性方程组', '线性代数·特征值与特征向量', '线性代数·二次型',
+  '概率论·随机事件和概率', '概率论·随机变量及其分布', '概率论·多维随机变量及其分布',
+  '概率论·随机变量的数字特征', '概率论·大数定律与中心极限定理', '概率论·数理统计的基本概念',
+  '概率论·参数估计', '概率论·假设检验'
+];
+const AI_TYPES = ['solve', 'choice', 'fill', 'judge', 'proof'];
+
+// 从模型返回文本里尽量抠出 JSON
+function extractJson(s) {
+  if (!s) return null;
+  try { return JSON.parse(s); } catch (e) {}
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch (e) {} }
+  return null;
+}
+
+async function classifyOne(im, model, apiKey) {
+  const prompt =
+    '你是考研数学题库的切图质检员。下面是一张从 PDF 裁出的图片。' +
+    '请判断它是否是一道“完整的数学题目”（而非：空白页 / 页眉页脚 / 页码 / 图注 / 广告水印 / 纯公式碎片 / 上一题的解答延续）。' +
+    '只输出一个 JSON 对象，不要任何解释。格式：' +
+    '{"isQuestion": true或false, "isBlank": true或false, "number": "题号字符串或null", "chapter": "章节或null", "type": "solve|choice|fill|judge|proof", "confidence": 0到1的小数}。' +
+    'chapter 只能从以下选一（无法确定则写 null）：' + AI_CHAPTERS.join(' / ') + '。' +
+    '若图片是题目但看不清题号，number 写 null；若明显是解答延续或碎片/空白，isQuestion 写 false。';
+  const resp = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: model,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: im.dataUrl } }
+        ]
+      }],
+      response_format: { type: 'json_object' }
+    })
+  });
+  const data = await resp.json().catch(() => ({}));
+  let result = extractJson(data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content);
+  if (!result || typeof result !== 'object') result = { isQuestion: true, isBlank: false, confidence: 0 };
+  result.id = im.id;
+  result.isQuestion = result.isQuestion !== false;
+  result.isBlank = !!result.isBlank;
+  result.number = result.number && String(result.number).trim() ? String(result.number).trim() : null;
+  result.chapter = (typeof result.chapter === 'string' && AI_CHAPTERS.indexOf(result.chapter) >= 0) ? result.chapter : null;
+  result.type = AI_TYPES.indexOf(result.type) >= 0 ? result.type : 'solve';
+  result.confidence = typeof result.confidence === 'number' ? Math.min(1, Math.max(0, result.confidence)) : 0.5;
+  return result;
+}
+
+async function handleAiClassify(req, res) {
+  const b = await readBody(req);
+  const images = Array.isArray(b.images) ? b.images : [];
+  if (!images.length) return sendJSON(res, 400, { error: 'no images' });
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+  if (!apiKey) return sendJSON(res, 500, { error: 'DASHSCOPE_API_KEY not set' });
+  const model = process.env.DASHSCOPE_MODEL || 'qwen-vl-plus';
+  const CONC = 5; // 并发上限
+  const results = [];
+  for (let i = 0; i < images.length; i += CONC) {
+    const batch = images.slice(i, i + CONC);
+    const settled = await Promise.all(batch.map((im) =>
+      classifyOne(im, model, apiKey).catch((e) => ({ id: im.id, isQuestion: true, isBlank: false, confidence: 0, error: String(e && e.message || e) }))
+    ));
+    results.push(...settled);
+  }
+  return sendJSON(res, 200, { results });
+}
+
 /* ---------- API 路由 ---------- */
 async function handleApi(req, res, url) {
   const p = url.pathname;
@@ -170,6 +246,12 @@ async function handleApi(req, res, url) {
   // 健康检查
   if (p === '/api/health' && method === 'GET') {
     return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length });
+  }
+
+  // AI 题目识别（通义千问 Qwen-VL 代理）。公开接口，无需登录。
+  // 接收 { images: [{ id, dataUrl }] }，返回 { results: [{ id, isQuestion, isBlank, number, chapter, type, confidence }] }
+  if (p === '/api/ai-classify' && method === 'POST') {
+    return handleAiClassify(req, res);
   }
 
   // 注册

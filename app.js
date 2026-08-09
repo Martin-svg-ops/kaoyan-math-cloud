@@ -729,6 +729,7 @@
   let toastTimer = null;
   let showUpload = false;
   let uploadParsed = null;
+  let aiEnabled = true; // AI 智能识别题目（过滤空白/碎片、自动归类章节）
   let sidebarMode = 'chapter';
   let topTimer = { running: false, seconds: 0, handle: null };
 
@@ -1073,6 +1074,9 @@
           <button class="btn btn-primary" data-action="pick-bank-file" type="button">选择文件</button>
           <input type="file" id="uploadFile" accept=".json,.csv,.pdf,application/json,text/csv,application/pdf" style="display:none">
         </div>
+        <label class="switch-line" style="margin-top:10px;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#cdd6e8">
+          <input type="checkbox" id="aiClassifyToggle" ${aiEnabled ? 'checked' : ''}> AI 智能识别题目（过滤空白/碎片，自动归类章节）
+        </label>
         <div id="pdfCropStatus" class="hint" style="margin-top:10px;display:none"></div>
         ${location.protocol === 'file:' ? '<div class="hint" style="margin-top:10px">直接打开本页时 PDF 识别能力有限，建议运行 server.py 后通过本地地址使用完整识别。</div>' : ''}
       </div>`;
@@ -1606,6 +1610,46 @@
     else { el.style.display = 'none'; }
   }
 
+  // 把裁图降采样后发给 /api/ai-classify，返回 { id: result }
+  async function aiClassifyQuestions(questions) {
+    const payload = [];
+    for (const q of questions) {
+      const small = await downScaleDataUrl(q.img, 768, 0.7);
+      payload.push({ id: q.id, dataUrl: small });
+    }
+    const resp = await fetch('/api/ai-classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: payload })
+    });
+    if (!resp.ok) {
+      let msg = 'HTTP ' + resp.status;
+      try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch (e) {}
+      throw new Error(msg);
+    }
+    const data = await resp.json();
+    const map = {};
+    (data.results || []).forEach((r) => { if (r && r.id) map[r.id] = r; });
+    return map;
+  }
+
+  // 用 canvas 把 dataURL 等比缩放到最大宽度 maxW，返回压缩后的 JPEG dataURL（减小请求体积与成本）
+  function downScaleDataUrl(dataUrl, maxW, quality) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        try { c.getContext('2d').drawImage(img, 0, 0, w, h); } catch (e) { resolve(dataUrl); return; }
+        try { resolve(c.toDataURL('image/jpeg', quality)); } catch (e) { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
   async function handleBankFile(file) {
     if (!file) return;
     if (/\.pdf$/i.test(file.name)) {
@@ -1618,7 +1662,40 @@
         });
         setUploadStatus('');
         if (!res.questions.length) {
-          toast('未能从 PDF 中识别出带题号的题目，请确认是带题号的排版 PDF');
+          toast('未能从 PDF 中识别出题目，请确认是带题号的排版 PDF');
+          return;
+        }
+        // 读取 AI 开关（若存在）
+        const aiToggle = document.getElementById('aiClassifyToggle');
+        if (aiToggle) aiEnabled = !!aiToggle.checked;
+        // AI 智能识别：过滤空白/碎片、补全题号与章节（失败则降级保留原切图）
+        if (aiEnabled && res.questions.length) {
+          try {
+            setUploadStatus('AI 正在识别题目、过滤空白与碎片…');
+            const map = await aiClassifyQuestions(res.questions);
+            const kept = [];
+            let removed = 0;
+            res.questions.forEach((q) => {
+              const r = map[q.id];
+              if (r && (r.isQuestion === false || r.isBlank)) { removed++; return; }
+              if (r) {
+                if (!q.number) q.number = r.number || q.number;
+                if (r.chapter) q.chapter = r.chapter;
+                if (r.type) q.type = r.type;
+              }
+              kept.push(q);
+            });
+            res.questions = kept;
+            setUploadStatus('');
+            if (removed) toast('AI 已过滤 ' + removed + ' 张非题目/空白碎片');
+          } catch (e) {
+            setUploadStatus('');
+            console.warn('AI 识别失败，降级保留原切图', e);
+            toast('AI 识别暂不可用（' + (e.message || e) + '），已保留原始切图');
+          }
+        }
+        if (!res.questions.length) {
+          toast('所有切图均被 AI 判定为非题目/空白，请关闭 AI 识别后重试，或检查 PDF 排版');
           return;
         }
         uploadParsed = { name: file.name, questions: res.questions, errors: res.errors, isImage: true, bankName: '' };
