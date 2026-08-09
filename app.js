@@ -31,6 +31,37 @@
     '概率论·参数估计',
     '概率论·假设检验'
   ];
+  // 旧版预置题库用「第X章·标题」命名（高数9章/线代6章/概率8章），这里映射到 23 个考研大纲模块
+  const CHAPTER_ALIAS = {
+    '第一章·函数、极限、连续': '高等数学·函数极限连续',
+    '第二章·一元函数微分学及其应用': '高等数学·一元函数微分学',
+    '第三章·一元函数积分学及其应用': '高等数学·一元函数积分学',
+    '第四章·空间解析几何': '高等数学·向量代数与空间解析几何',
+    '第五章·多元函数微分学及其应用': '高等数学·多元函数微分学',
+    '第六章·重积分及其应用': '高等数学·多元函数积分学',
+    '第七章·微分方程及其应用': '高等数学·常微分方程',
+    '第八章·无穷级数': '高等数学·无穷级数',
+    '第九章·曲线积分与曲面积分': '高等数学·多元函数积分学',
+    '第十章·行列式': '线性代数·行列式',
+    '第十一章·矩阵': '线性代数·矩阵',
+    '第十二章·向量': '线性代数·向量',
+    '第十三章·线性方程组': '线性代数·线性方程组',
+    '第十四章·相似矩阵': '线性代数·特征值与特征向量',
+    '第十五章·二次型': '线性代数·二次型',
+    '第十六章·随机事件及其概率': '概率论·随机事件和概率',
+    '第十七章·随机变量及其分布': '概率论·随机变量及其分布',
+    '第十八章·多维随机变量及其分布': '概率论·多维随机变量及其分布',
+    '第十九章·随机变量的数字特征': '概率论·随机变量的数字特征',
+    '第二十章·大数定律与中心极限定理': '概率论·大数定律与中心极限定理',
+    '第二十一章·数理统计的基本概念': '概率论·数理统计的基本概念',
+    '第二十二章·参数估计': '概率论·参数估计',
+    '第二十三章·假设检验': '概率论·假设检验'
+  };
+  function normalizeChapter(ch) {
+    if (!ch) return ch;
+    if (CHAPTER_LIST.indexOf(ch) !== -1) return ch;
+    return CHAPTER_ALIAS[ch] || ch;
+  }
   const PAGE_SIZE = 20;
   const memStore = {};
 
@@ -513,7 +544,7 @@
         ];
     const bank = (Array.isArray(d && d.bank) ? d.bank : [])
       .filter((q) => q && q.id && (q.stem || q.img))
-      .map((q) => Object.assign({}, q, { bankId: q.bankId || 'bank_total' }));
+      .map((q) => Object.assign({}, q, { bankId: q.bankId || 'bank_total', chapter: normalizeChapter(q.chapter) }));
     return {
       banks: banks,
       bank: bank,
@@ -542,7 +573,7 @@
       const ids = new Set(data.bank.map((q) => q.id));
       (pre.questions || []).forEach((q) => {
         if (!ids.has(q.id)) {
-          data.bank.push(Object.assign({}, q, { bankId: preBank.id }));
+          data.bank.push(Object.assign({}, q, { bankId: preBank.id, chapter: normalizeChapter(q.chapter) }));
           ids.add(q.id);
         }
       });
