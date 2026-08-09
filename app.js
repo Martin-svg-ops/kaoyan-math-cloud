@@ -3772,10 +3772,6 @@
     } else if (action === 'admin-back') {
       view = 'admin';
       render();
-    } else if (action === 'auth-tab') {
-      switchAuthTab(btn.dataset.tab);
-    } else if (action === 'auth-submit') {
-      submitAuth();
     } else if (action === 'close-modal') {
       closeModal();
     // ── 错题本管理 ──
@@ -4135,9 +4131,8 @@
       chip.className = 'user-chip';
       right.insertBefore(chip, right.firstChild);
     }
-    if (!auth.active) {
-      chip.style.display = '';
-      chip.innerHTML = '<span class="user-mode">本地模式</span>';
+    if (!auth.active || !auth.user) {
+      chip.style.display = 'none';
       return;
     }
     var role = auth.user && auth.user.isAdmin ? ' <span class="badge badge-blue">管理者</span>' : '';
@@ -4145,68 +4140,107 @@
       ' <button class="user-logout" data-action="logout" type="button" title="退出登录">退出</button>';
   }
 
-  function showAuthOverlay() {
-    var ov = document.getElementById('authOverlay');
-    if (!ov) {
-      ov = document.createElement('div');
-      ov.id = 'authOverlay';
-      ov.className = 'auth-overlay';
-      document.body.appendChild(ov);
+  /* ===================== 登录页逻辑 ===================== */
+  var loginMode = 'login';
+
+  function initLoginPage() {
+    // 粒子动画
+    var particlesEl = document.getElementById('loginParticles');
+    if (particlesEl) {
+      var symbols = ['∫', '∑', '∞', 'π', '∂', 'Δ', '√', 'α', 'β', 'λ', 'μ', 'σ', 'ε', 'θ', 'lim', 'dx', '→', '∈', '∀', '∃'];
+      for (var i = 0; i < 20; i++) {
+        var span = document.createElement('span');
+        span.className = 'particle';
+        span.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+        span.style.left = Math.random() * 100 + '%';
+        span.style.bottom = -(Math.random() * 60 + 10) + 'px';
+        span.style.animationDuration = (Math.random() * 8 + 10) + 's';
+        span.style.animationDelay = Math.random() * 8 + 's';
+        span.style.fontSize = (Math.random() * 18 + 14) + 'px';
+        particlesEl.appendChild(span);
+      }
     }
-    ov.dataset.mode = 'login';
-    ov.innerHTML =
-      '<div class="auth-card">' +
-        '<div class="auth-brand"><span class="brand-mark">数</span><span class="brand-name">研数工坊</span><span class="auth-sub">云端多用户</span></div>' +
-        '<div class="auth-tabs">' +
-          '<button class="auth-tab active" data-action="auth-tab" data-tab="login" type="button">登录</button>' +
-          '<button class="auth-tab" data-action="auth-tab" data-tab="register" type="button">注册</button>' +
-        '</div>' +
-        '<div class="auth-body">' +
-          '<label class="field-label">用户名</label>' +
-          '<input class="input" id="authUser" type="text" placeholder="用户名（至少 2 个字符）" autocomplete="username">' +
-          '<label class="field-label">密码</label>' +
-          '<input class="input" id="authPass" type="password" placeholder="密码（至少 4 位）" autocomplete="current-password">' +
-          '<div class="auth-error" id="authError"></div>' +
-          '<button class="btn btn-primary btn-block" data-action="auth-submit" type="button" id="authSubmit">登录</button>' +
-          '<div class="auth-hint" id="authHint">还没有账号？切换到「注册」创建一个独立账号，题库与其他用户互不影响。</div>' +
-        '</div>' +
-      '</div>';
-    ov.style.display = 'flex';
+
+    // 考研倒计时（默认 2026年12月19日 周六）
+    updateCountdown();
+    setInterval(updateCountdown, 60000);
+
+    // Tab 切换事件
+    document.querySelectorAll('.login-tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var t = this.dataset.loginTab;
+        document.querySelectorAll('.login-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.loginTab === t); });
+        loginMode = t;
+        var submit = document.getElementById('loginSubmit');
+        var hint = document.getElementById('loginHint');
+        if (submit) submit.textContent = t === 'login' ? '登 录' : '注册并进入';
+        if (hint) hint.textContent = t === 'login'
+          ? '还没有账号？切换到「注册」创建独立账号，题库互不影响'
+          : '创建独立账号，你的题库与其他用户完全隔离';
+        var err = document.getElementById('loginError');
+        if (err) err.textContent = '';
+      });
+    });
+
+    // 回车键提交
+    var passEl = document.getElementById('loginPass');
+    if (passEl) {
+      passEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') submitLogin();
+      });
+    }
+    var userEl = document.getElementById('loginUser');
+    if (userEl) {
+      userEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          var p = document.getElementById('loginPass');
+          if (p) p.focus();
+        }
+      });
+    }
+
+    // 提交按钮
+    var submitBtn = document.getElementById('loginSubmit');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', submitLogin);
+    }
   }
 
-  function switchAuthTab(tab) {
-    var ov = document.getElementById('authOverlay');
-    if (!ov) return;
-    ov.querySelectorAll('.auth-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === tab); });
-    var submit = document.getElementById('authSubmit');
-    var hint = document.getElementById('authHint');
-    if (submit) submit.textContent = tab === 'login' ? '登录' : '注册并进入';
-    if (hint) hint.textContent = tab === 'login'
-      ? '还没有账号？切换到「注册」创建一个独立账号，题库与其他用户互不影响。'
-      : '创建一个独立账号，你的题库与其他用户完全隔离。';
-    ov.dataset.mode = tab;
+  function updateCountdown() {
+    // 2027 考研初试：2026年12月19日（周六）
+    var examDate = new Date(2026, 11, 19); // month is 0-indexed
+    var now = new Date();
+    var days = Math.max(0, Math.ceil((examDate - now) / (1000 * 60 * 60 * 24)));
+    var el = document.getElementById('loginCdDays');
+    if (el) el.textContent = days;
   }
 
-  async function submitAuth() {
-    var ov = document.getElementById('authOverlay');
-    var mode = (ov && ov.dataset.mode) || 'login';
-    var user = (document.getElementById('authUser') || {}).value || '';
-    var pass = (document.getElementById('authPass') || {}).value || '';
-    var errEl = document.getElementById('authError');
+  async function submitLogin() {
+    var user = (document.getElementById('loginUser') || {}).value || '';
+    var pass = (document.getElementById('loginPass') || {}).value || '';
+    var errEl = document.getElementById('loginError');
     if (errEl) errEl.textContent = '';
     if (user.length < 2) { if (errEl) errEl.textContent = '用户名至少 2 个字符'; return; }
     if (pass.length < 4) { if (errEl) errEl.textContent = '密码至少 4 位'; return; }
+    var submitBtn = document.getElementById('loginSubmit');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '处理中…'; }
     try {
-      var r = mode === 'login' ? await API.login(user, pass) : await API.register(user, pass);
-      auth.token = r.token; auth.user = r.user;
+      var r = loginMode === 'login' ? await API.login(user, pass) : await API.register(user, pass);
+      auth.token = r.token; auth.user = r.user; auth.active = true;
       storageSet('ym_auth_token', r.token);
-      if (ov) ov.style.display = 'none';
+      // 隐藏登录页，显示应用
+      var lp = document.getElementById('loginPage');
+      var aw = document.getElementById('appWrap');
+      if (lp) lp.style.display = 'none';
+      if (aw) aw.style.display = '';
       await loadBankFromServer();
       renderUserBadge();
       render();
-      toast(mode === 'login' ? '欢迎回来，' + r.user.username : '注册成功，已登录为 ' + r.user.username);
+      toast(loginMode === 'login' ? '欢迎回来，' + r.user.username : '注册成功，已登录为 ' + r.user.username);
     } catch (e) {
       if (errEl) errEl.textContent = (e && e.message) || '操作失败';
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = loginMode === 'login' ? '登 录' : '注册并进入'; }
     }
   }
 
@@ -4214,11 +4248,20 @@
     if (auth.token) { try { API.logout(auth.token); } catch (e) {} }
     auth.active = false; auth.token = ''; auth.user = null;
     storageSet('ym_auth_token', '');
-    state = loadData();
+    // 显示登录页，隐藏应用
+    var lp = document.getElementById('loginPage');
+    var aw = document.getElementById('appWrap');
+    if (lp) lp.style.display = '';
+    if (aw) aw.style.display = 'none';
+    // 重置表单
+    var u = document.getElementById('loginUser');
+    var p = document.getElementById('loginPass');
+    var e = document.getElementById('loginError');
+    if (u) u.value = '';
+    if (p) p.value = '';
+    if (e) e.textContent = '';
     view = 'browse';
-    renderUserBadge();
-    render();
-    toast('已退出登录（切回本地模式）');
+    state = loadData();
   }
 
   async function apiSaveQuestion(q, qid) {
@@ -4286,29 +4329,44 @@
   }
 
   async function boot() {
+    initLoginPage();
+
+    // 先尝试连接后端
+    var hasBackend = false;
     try {
       var h = await API.health();
-      if (h && h.multiuser) auth.active = true;
-    } catch (e) { auth.active = false; }
-    if (auth.active) {
+      if (h && h.multiuser) hasBackend = true;
+    } catch (e) { hasBackend = false; }
+
+    if (hasBackend) {
+      // 云端模式：必须登录
       var t = storageGet('ym_auth_token');
       if (t) {
         try {
           var me = await API.me(t);
-          auth.token = t; auth.user = me.user;
+          auth.token = t; auth.user = me.user; auth.active = true;
           await loadBankFromServer();
-          // 加载云端错题本
           if (me.wrongBooks && Array.isArray(me.wrongBooks) && me.wrongBooks.length) {
             state.wrongBooks = me.wrongBooks;
           }
           ensureDefaultWrongBook();
+          // 登录态有效，隐藏登录页显示应用
+          var lp = document.getElementById('loginPage');
+          var aw = document.getElementById('appWrap');
+          if (lp) lp.style.display = 'none';
+          if (aw) aw.style.display = '';
           renderUserBadge();
           render();
           return;
         } catch (e) { storageSet('ym_auth_token', ''); }
       }
-      showAuthOverlay();
+      // 无有效 token，保持登录页显示
     } else {
+      // 无后端：隐藏登录页，直接进入本地模式
+      var lp = document.getElementById('loginPage');
+      var aw = document.getElementById('appWrap');
+      if (lp) lp.style.display = 'none';
+      if (aw) aw.style.display = '';
       state.backendOffline = true;
       renderUserBadge();
       render();

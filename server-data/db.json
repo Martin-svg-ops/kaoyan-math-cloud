@@ -67,6 +67,16 @@
       "createdAt": "2026-08-09T00:26:30.833Z",
       "added": [],
       "deletedIds": []
+    },
+    {
+      "id": "u_4_f9f731",
+      "username": "testuser",
+      "salt": "917846f790e788e89b2a081dbd181b8e",
+      "hash": "85e3d81d18b82d0403fdef6503228b942df9df19813bbd4403fedbbb3c82cdc905b0cf85259dfc63b76ab216b45232e4dc103cacdf8db74d71d6d988db4f2cec",
+      "isAdmin": false,
+      "createdAt": "2026-08-09T13:46:30.450Z",
+      "added": [],
+      "deletedIds": []
     }
   ],
   "sessions": {
@@ -79,10 +89,12 @@
     "41ec25eb344b7b280266bd9b8b1a9d38ec3c3b1d23588ff528e235a77d6d0f6f": "u_admin",
     "99a3976abac2e505303b2565bed7a682b9cef927f89deff09f1ba0604503d28f": "u_3_b48ee0",
     "0720088c9607f1550f2912783fa4f786140f45aa5fa7cb84ea9d1dabef0719b0": "u_3_b48ee0",
-    "bba6111814f0a8971ff5cf55f8fdca8734dd8fe1472718396b8cb015d186c2de": "u_3_b48ee0"
+    "bba6111814f0a8971ff5cf55f8fdca8734dd8fe1472718396b8cb015d186c2de": "u_3_b48ee0",
+    "ae9b333cf8d13f2971464d4756b0992a0e5a33173812a053a4ec683c8265e417": "u_4_f9f731",
+    "7b1e78995f876e5cbd5aa4d6fd2ad24d6a30f15c69fb14abc4ae32901c37160b": "u_4_f9f731"
   },
   "seq": {
-    "u": 3,
+    "u": 4,
     "uq": 2
   }
 }
