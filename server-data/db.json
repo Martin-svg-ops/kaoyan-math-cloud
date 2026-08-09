@@ -1,0 +1,40 @@
+{
+  "users": [
+    {
+      "id": "u_admin",
+      "username": "admin",
+      "salt": "61c899ddb6cc8f0d3484a25bde62e987",
+      "hash": "9596f9739cf3d7c9455c7d6d4285ac2d194bd335fb573d86eb950021d3609ce414d39f1a3087a16f9306867af45168d532ee4d1c987494866e13ff6383656e7a",
+      "isAdmin": true,
+      "createdAt": "2026-08-09T00:22:33.887Z",
+      "added": [],
+      "deletedIds": [],
+      "deletedBankIds": []
+    }
+  ],
+  "sessions": {
+    "6db3cbb661ceacf2961af1f8bdfce8cfa99c5cf112025c91c344b6db708078fc": "u_1_e3867d",
+    "838d1febd6abeaae7ba5ab0fe309a375e216b294408df0389136ecacd9575331": "u_2_4dd9ea",
+    "8935a6c4def499a2e254266b9c6f87a9ec78c54931ddad05f26039428c3516cf": "u_admin",
+    "7fd40972f98e1a0b5033ac2e409e3f40d6ea5c909d0039a3aa9192b1f10ef34b": "u_admin",
+    "f0e4ba843e7c4015d291a3e8531ee21761b0c36ed86be1132e36800da394871d": "u_admin",
+    "4078e5530ed5475c93fb80057d75d3f474bf19e6c768fc0f050d1d1bb3cfe997": "u_admin",
+    "41ec25eb344b7b280266bd9b8b1a9d38ec3c3b1d23588ff528e235a77d6d0f6f": "u_admin",
+    "99a3976abac2e505303b2565bed7a682b9cef927f89deff09f1ba0604503d28f": "u_3_b48ee0",
+    "0720088c9607f1550f2912783fa4f786140f45aa5fa7cb84ea9d1dabef0719b0": "u_3_b48ee0",
+    "bba6111814f0a8971ff5cf55f8fdca8734dd8fe1472718396b8cb015d186c2de": "u_3_b48ee0",
+    "ae9b333cf8d13f2971464d4756b0992a0e5a33173812a053a4ec683c8265e417": "u_4_f9f731",
+    "7b1e78995f876e5cbd5aa4d6fd2ad24d6a30f15c69fb14abc4ae32901c37160b": "u_4_f9f731",
+    "8fa95751c44bca62788ff0fd38a1fc46bbc22040b086fee91f0ec2f8c91b61d0": "u_5_7ef7a3",
+    "9792905e32a4bc0ce3f1f3f5358ebaee8cc7745d280cdef3619421786fd21750": "u_5_7ef7a3",
+    "0dedad4ff9f1f13f37ae909659ea62ec0d0c39899093bc7ba36795ca76909984": "u_6_7dfc5f",
+    "60af06d9955d1470eddcd29989cff3aaf9053d0d7d9af8441f1f67856d43acd2": "u_6_7dfc5f",
+    "59d13b75f9072359437144bfabd4cf73f7ecc177acaa5de5d4b9c988b4dfb6bd": "u_admin",
+    "ca1e86bdb85d505759fb9e9db98627fba209a7a9a62e1b2d2e8248a34c3fe301": "u_admin",
+    "69f6a63ded9b0e965d0312d9a4d751a5d6d896f73be84979034e03b34d46fb04": "u_admin"
+  },
+  "seq": {
+    "u": 7,
+    "uq": 2
+  }
+}

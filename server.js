@@ -12,6 +12,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execSync } = require('child_process');
 
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'server-data');
@@ -54,7 +55,45 @@ function loadDB() {
 function saveDB() {
   try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
   catch (e) { console.error('[server] 写入数据库失败：', e); }
+  scheduleGitSync();
 }
+// Git 自动同步：每次数据变更后 5 秒内自动 commit+push 到 GitHub，确保部署间数据不丢失
+let _gitSyncTimer = null;
+function scheduleGitSync() {
+  if (!process.env.GIT_TOKEN) return;
+  if (_gitSyncTimer) clearTimeout(_gitSyncTimer);
+  _gitSyncTimer = setTimeout(() => {
+    _gitSyncTimer = null;
+    try {
+      const token = process.env.GIT_TOKEN;
+      const repo = 'https://' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+      execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
+      try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); }
+      catch (_) { /* 无变更，跳过 */ return; }
+      execSync('git push ' + repo + ' master', { cwd: ROOT, timeout: 15000 });
+      console.log('[git-sync] 数据已同步到 GitHub');
+    } catch (e) {
+      console.error('[git-sync] 同步失败：', String(e.message || e).slice(0, 200));
+    }
+  }, 5000);
+}
+// 启动时从 Git 拉取最新数据
+function initGit() {
+  try {
+    execSync('git config user.email "sync@kaoyan-math.local"', { cwd: ROOT });
+    execSync('git config user.name "KaoyanMathSync"', { cwd: ROOT });
+    if (process.env.GIT_TOKEN) {
+      const token = process.env.GIT_TOKEN;
+      const repo = 'https://' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+      try {
+        execSync('git pull ' + repo + ' master -- server-data/db.json', { cwd: ROOT, timeout: 15000 });
+        console.log('[git] 已拉取远程 db.json');
+        loadDB(); // 重新加载拉取到的数据
+      } catch (_) { /* 远程无数据，使用本地 */ }
+    }
+  } catch (_) { /* git 不可用 */ }
+}
+initGit();
 loadDB();
 
 /* ---------- 密码与令牌 ---------- */
@@ -315,7 +354,7 @@ async function handleApi(req, res, url) {
 
   // 健康检查
   if (p === '/api/health' && method === 'GET') {
-    return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length, version: 'v63' });
+    return sendJSON(res, 200, { ok: true, multiuser: true, baseCount: BASE.questions.length, version: 'v64' });
   }
 
   // AI 题目识别（通义千问 Qwen-VL 代理）。公开接口，无需登录。

@@ -7,10 +7,6 @@ services:
     buildCommand: "echo skip-build"
     startCommand: "node server.js"
     healthCheckPath: /api/health
-    disk:
-      name: kaoyan-data
-      mountPath: /opt/render/project/src/server-data
-      sizeGB: 1
     envVars:
       - key: PORT
         value: 3000
@@ -20,3 +16,5 @@ services:
         sync: false
       - key: DASHSCOPE_MODEL
         value: qwen-vl-plus
+      - key: GIT_TOKEN
+        sync: false
