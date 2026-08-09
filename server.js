@@ -405,7 +405,7 @@ async function handleApi(req, res, url) {
       me.added = (me.added || []).filter(q => q.bankId !== bankId);
     } else {
       // 删除基础题库：标记所有基础题 ID 为已删除
-      BASE.bank.forEach(q => {
+      BASE.questions.forEach(q => {
         if (!(me.deletedIds || []).includes(q.id)) {
           me.deletedIds = me.deletedIds || [];
           me.deletedIds.push(q.id);
