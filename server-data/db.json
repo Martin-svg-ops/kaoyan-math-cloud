@@ -10,6 +10,18 @@
       "added": [],
       "deletedIds": [],
       "deletedBankIds": []
+    },
+    {
+      "id": "u_10_bfa928",
+      "username": "Martin",
+      "salt": "9c2e09ef519e395442405748bcd611aa",
+      "hash": "dc63fe1fd6cd74e0723f8eb2bed776e22f0cffdc54021bd86ee8bb31b10d225e716670f845aa7995da4d8905613a95304eaacf90cce0d6d5cb8c7ab004fd1a06",
+      "isAdmin": false,
+      "hasBaseBank": false,
+      "createdAt": "2026-08-11T04:58:06.010Z",
+      "added": [],
+      "deletedIds": [],
+      "wrongBooks": []
     }
   ],
   "sessions": {
@@ -41,10 +53,11 @@
     "2b893c78fb7f9c53da7f3aabcafb9d14aab37195fcfc2731415c01c34f731184": "u_admin",
     "be89d80e60736db07c8c47041dd71cea4995684fa4e4af6ae589de9fb96a712d": "u_admin",
     "83f1847b01dab46f37b5157f444c68047b7f69adb6b56fb86c24d4cb7e9269d4": "u_admin",
-    "9e43e6cfc73f56a63b6f076b46f36476d4fe8d07e6324940e4e3dd572e1091ce": "u_admin"
+    "9e43e6cfc73f56a63b6f076b46f36476d4fe8d07e6324940e4e3dd572e1091ce": "u_admin",
+    "36036a23edd022cffca8938ea4a2015a23c6b717824f4359ae88ec34c030f858": "u_10_bfa928"
   },
   "seq": {
-    "u": 9,
+    "u": 10,
     "uq": 2
   }
 }
