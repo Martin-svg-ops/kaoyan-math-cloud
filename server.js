@@ -78,7 +78,24 @@ function scheduleGitSync() {
     }
   }, 5000);
 }
-// 启动时从 Git 拉取最新数据
+// 启动时从 Git 拉取并【合并】最新数据（本地优先，避免部署覆盖运行时新增的用户）
+function mergeDBIntoLocal(remote) {
+  if (!remote || !Array.isArray(remote.users)) return false;
+  let local = { users: [], sessions: {}, seq: {} };
+  if (fs.existsSync(DB_FILE)) {
+    try { local = Object.assign(local, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); }
+    catch (_) { /* 损坏则基于远程重建 */ }
+  }
+  const ids = new Set(local.users.map((u) => u.id));
+  (remote.users || []).forEach((ru) => {
+    if (!ids.has(ru.id)) { local.users.push(ru); ids.add(ru.id); } // 远程独有的用户并入本地；本地已有的保留（本地优先，不覆盖）
+  });
+  // sessions / seq 取本地与远程的并集（远程优先补齐，避免丢掉其他实例的会话）
+  local.sessions = Object.assign({}, remote.sessions || {}, local.sessions);
+  local.seq = Object.assign({}, remote.seq || {}, local.seq);
+  fs.writeFileSync(DB_FILE, JSON.stringify(local, null, 2));
+  return true;
+}
 function initGit() {
   try {
     execSync('git config user.email "sync@kaoyan-math.local"', { cwd: ROOT });
@@ -87,10 +104,17 @@ function initGit() {
       const token = process.env.GIT_TOKEN;
       const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
       try {
-        // 拉取远程 master 后直接检出 db.json（不合并，避免冲突）
         execSync('git fetch ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
-        execSync('git checkout FETCH_HEAD -- server-data/db.json 2>&1', { cwd: ROOT, timeout: 8000 });
-        console.log('[git] 已拉取远程 db.json');
+        // 只把远程 db.json 读出来【合并】进本地，绝不直接 checkout 覆盖本地运行数据
+        const tmp = path.join(ROOT, 'server-data', '.remote-db-merge.json');
+        execSync('git show FETCH_HEAD:server-data/db.json > "' + tmp + '" 2>/dev/null', { cwd: ROOT, timeout: 8000 });
+        if (fs.existsSync(tmp)) {
+          try {
+            const remote = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+            if (mergeDBIntoLocal(remote)) console.log('[git] 已合并远程 db.json（本地优先，不覆盖已有用户）');
+          } catch (_) { /* 远程数据损坏，忽略 */ }
+          try { fs.unlinkSync(tmp); } catch (_) {}
+        }
       } catch (_) { /* 远程无数据，使用本地 */ }
     }
   } catch (_) { /* git 不可用 */ }
@@ -672,6 +696,13 @@ function serveStatic(req, res, url) {
 /* ---------- 服务器 ---------- */
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
+  // ===== CORS：允许原生 App（Capacitor WebView，来源为 capacitor://localhost 或 null）跨域调用云后端 =====
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Auth-Token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname.startsWith('/api/')) {
     handleApi(req, res, url).catch((e) => {
