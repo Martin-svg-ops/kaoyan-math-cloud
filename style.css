@@ -408,6 +408,9 @@ button { cursor: pointer; }
 .badge-orange { background: var(--orange-soft); color: var(--orange); }
 .badge-red { background: var(--red-soft); color: var(--red); }
 .badge-gray { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+.badge-purple { background: #f3e8ff; color: #7c3aed; }
+.checkbox-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; user-select: none; }
+.checkbox-inline input { width: 16px; height: 16px; accent-color: var(--brand); }
 
 /* ===== Question Cards (Browse View) ===== */
 .qcard {

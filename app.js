@@ -554,7 +554,8 @@
       papers: [paper],
       attempts: [],
       wrongBooks: [],
-      activeWrongBookId: ''
+      activeWrongBookId: '',
+      composeCount: {}
     };
   }
 
@@ -587,7 +588,8 @@
       papers: Array.isArray(d && d.papers) ? d.papers : [],
       attempts: Array.isArray(d && d.attempts) ? d.attempts : [],
       wrongBooks: wrongBooks,
-      activeWrongBookId: activeWrongBookId
+      activeWrongBookId: activeWrongBookId,
+      composeCount: (d && d.composeCount && typeof d.composeCount === 'object') ? d.composeCount : {}
     };
   }
 
@@ -768,7 +770,8 @@
     q: '',
     chapter: 'all',
     type: 'all',
-    sel: []
+    sel: [],
+    excludeComposed: false
   };
   const wrongFilter = { status: 'pending', chapter: 'all', type: 'all' };
   let session = null;
@@ -1291,6 +1294,13 @@
               <div class="hint" style="margin:0">从已选章节中按数量随机抽取；已加入试卷的题目不会重复抽取。</div>
             </div>
           </div>
+          <div class="field" style="margin-top:12px">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="excludeComposed" data-exclude-composed ${group.excludeComposed ? 'checked' : ''}>
+              排除已组过的题（只抽没组过的）
+            </label>
+            <div class="hint" style="margin:4px 0 0">勾选后，随机抽题与下方题目列表都会跳过已被组进试卷的题目。</div>
+          </div>
         </div>
       </div>
       <div class="split">
@@ -1336,6 +1346,7 @@
       if (group.listBank !== 'all' && item.bankId !== group.listBank) return false;
       if (group.chapter !== 'all' && item.chapter !== group.chapter) return false;
       if (group.type !== 'all' && item.type !== group.type) return false;
+      if (group.excludeComposed && (state.composeCount[item.id] || 0) > 0) return false;
       return true;
     });
   }
@@ -1355,7 +1366,7 @@
           <input type="checkbox" class="q-check" data-pick="${esc(q.id)}" ${inSel ? 'checked' : ''} aria-label="选择题目">
           <div class="q-main">
             <div class="stem stem-line">${stemMedia(q, 'q-img q-img-thumb')}</div>
-            <div class="q-meta">${typeBadge(q.type)}<span>${esc(q.chapter)}</span>${q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : ''}<span class="difficulty">${stars(q.difficulty)}</span>${inSel ? '<span class="badge badge-green">已加入</span>' : ''}</div>
+            <div class="q-meta">${typeBadge(q.type)}<span>${esc(q.chapter)}</span>${q.number ? '<span class="badge badge-gray">题号 ' + esc(q.number) + '</span>' : ''}<span class="difficulty">${stars(q.difficulty)}</span>${inSel ? '<span class="badge badge-green">已加入</span>' : ''}${(state.composeCount[q.id] || 0) > 0 ? '<span class="badge badge-purple">已组 ' + (state.composeCount[q.id] || 0) + ' 次</span>' : ''}</div>
           </div>
           <div class="q-actions"><button class="btn btn-sm" data-action="add-one" data-qid="${esc(q.id)}" type="button">${icon('plus', 'icon-sm')}加入</button></div>
         </div>`;
@@ -1369,7 +1380,7 @@
       if (!q) return '';
       return `
         <div class="sel-item">
-          <div class="sel-title"><strong>${i + 1}.</strong> ${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${stemMedia(q, 'q-img q-img-thumb')}</div>
+          <div class="sel-title"><strong>${i + 1}.</strong> ${q.number ? '<span class="badge badge-gray">' + esc(q.number) + '</span> ' : ''}${stemMedia(q, 'q-img q-img-thumb')}${(state.composeCount[q.id] || 0) > 0 ? '<span class="badge badge-purple">已组 ' + (state.composeCount[q.id] || 0) + ' 次</span>' : ''}</div>
           <div class="sel-controls">
             ${typeBadge(q.type)}
             <input class="input input-sm score-input" type="number" min="1" max="30" value="${s.score}" data-sel-score="${i}" aria-label="第 ${i + 1} 题分值">
@@ -1726,7 +1737,7 @@
       const small = await downScaleDataUrl(q.img, 384, 0.5);
       return { id: q.id, dataUrl: small, text: q._text || '' };
     }));
-    const resp = await fetch('/api/ai-classify', {
+    const resp = await fetch((window.API_BASE || '') + '/api/ai-classify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images: payload })
@@ -1927,7 +1938,7 @@
     try {
       const fd = new FormData();
       fd.append('file', file, file.name);
-      const res = await fetch('/api/extract-pdf', { method: 'POST', body: fd });
+      const res = await fetch((window.API_BASE || '') + '/api/extract-pdf', { method: 'POST', body: fd });
       if (!res.ok) return '';
       const data = await res.json();
       return data && data.text ? data.text : '';
@@ -2874,6 +2885,7 @@
       if (!chapters.has(q.chapter)) return false;
       if (group.bank !== 'all' && q.bankId !== group.bank) return false;
       if (!diffOk(q.difficulty, group.diff)) return false;
+      if (group.excludeComposed && (state.composeCount[q.id] || 0) > 0) return false;
       return true;
     });
     const selIds = new Set(group.sel.map((s) => s.qid));
@@ -2942,6 +2954,7 @@
     group.sel.forEach((s) => {
       const q = qById(s.qid);
       scores[s.qid] = Math.max(1, Number(s.score) || (q ? DEFAULT_SCORE[q.type] : 4));
+      state.composeCount[s.qid] = (state.composeCount[s.qid] || 0) + 1;
     });
     state.papers.push({
       id: uid('p'),
@@ -4022,6 +4035,9 @@
       group.diff = t.value;
     } else if (t.matches('[data-group-bank]')) {
       group.bank = t.value;
+    } else if (t.matches('[data-exclude-composed]')) {
+      group.excludeComposed = t.checked;
+      renderGroupList();
     } else if (t.matches('[data-group-listbank]')) {
       group.listBank = t.value;
       renderGroupList();

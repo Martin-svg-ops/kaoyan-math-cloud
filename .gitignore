@@ -7,3 +7,27 @@ cloudflared.exe
 node_modules/
 *.log
 .DS_Store
+# Android 原生工程构建产物
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/app/debug/
+# 签名密钥库（含发布证书，切勿提交）
+kaoyan-math-release.keystore
+# 本地 SDK 安装脚本
+setup-android.sh
+# Capacitor 前端包（由根目录静态资源生成）
+www/
+# 本地下载的 JDK（约 205MB，勿提交）
+jdk21/
+jdk21.zip
+# 临时解包/校验目录
+apkcheck/
+apkcheck2/
+csscheck/
+htmlcheck/
+# 本地二维码图片
+apk-download-qr.png
+# Android 原生工程源（本地构建 APK 用，勿随网站提交）
+android/
