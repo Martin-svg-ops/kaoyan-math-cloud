@@ -277,6 +277,36 @@ button { cursor: pointer; }
   flex: 0 0 auto;
 }
 
+/* 侧栏底部：当前账号 + 退出（手机抽屉里稳定可达） */
+.sidebar-user {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  padding: 11px 12px calc(11px + env(safe-area-inset-bottom, 0));
+  background: var(--surface-2);
+}
+.sidebar-user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sidebar-user .user-greet { color: var(--faint); font-size: 11px; width: 100%; line-height: 1; }
+.sidebar-user .user-name { font-weight: 600; color: var(--ink); font-size: 14px; }
+.sidebar-user .user-logout {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .12s;
+}
+.sidebar-user .user-logout:hover { color: #fff; background: var(--brand-deep); border-color: var(--brand-deep); }
+.sidebar-user .user-logout:active { transform: scale(.97); }
+
 .storage-note { color: var(--faint); font-size: 11px; line-height: 1.5; margin: 0 4px 8px; }
 
 /* ===== Main ===== */

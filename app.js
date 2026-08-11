@@ -4146,22 +4146,26 @@
   }
 
   function renderUserBadge() {
-    var right = document.querySelector('.topbar-right');
-    if (!right) return;
-    var chip = document.getElementById('userChip');
-    if (!chip) {
-      chip = document.createElement('div');
-      chip.id = 'userChip';
-      chip.className = 'user-chip';
-      right.insertBefore(chip, right.firstChild);
+    var sb = document.getElementById('sidebar');
+    if (!sb) return;
+    var panel = document.getElementById('sidebarUser');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'sidebarUser';
+      panel.className = 'sidebar-user';
+      sb.appendChild(panel);
     }
     if (!auth.active || !auth.user) {
-      chip.style.display = 'none';
+      panel.style.display = 'none';
       return;
     }
+    panel.style.display = '';
     var role = auth.user && auth.user.isAdmin ? ' <span class="badge badge-blue">管理者</span>' : '';
-    chip.innerHTML = '<span class="user-name">' + esc(auth.user ? auth.user.username : '') + '</span>' + role +
-      ' <button class="user-logout" data-action="logout" type="button" title="退出登录">退出</button>';
+    panel.innerHTML = '<div class="sidebar-user-row">' +
+      '<span class="user-greet">当前账号</span>' +
+      '<span class="user-name">' + esc(auth.user ? auth.user.username : '') + '</span>' + role +
+      '<button class="user-logout" data-action="logout" type="button" title="退出登录">退出</button>' +
+      '</div>';
   }
 
   /* ===================== 登录页逻辑 ===================== */

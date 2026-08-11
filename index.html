@@ -72,7 +72,7 @@
     })();
   </script>
   <script type="module" src="vendor/pdf-loader.mjs?v=50"></script>
-  <script src="data/880数一基础篇.js?v=37"></script>
+  <script src="data/bank880.js?v=37"></script>
   <script src="data/gaoshu_jichu.js?v=37"></script>
   <script src="data/gaoshu_zonghe.js?v=37"></script>
   <script src="data/gaoshu_tuozhan.js?v=37"></script>
@@ -187,7 +187,14 @@
   </div>
   <dialog class="modal" id="modal"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=64"></script>
+  <!-- 原生 App（Capacitor）环境：接口指向云端后端，全部走绝对地址 -->
+  <script>
+    if (window.Capacitor) {
+      window.API_BASE = 'https://kaoyan-math-cloud.onrender.com';
+      document.documentElement.classList.add('native-app');
+    }
+  </script>
+  <script src="app.js?v=65"></script>
   <!-- PWA 安装提示横幅 -->
   <div class="install-banner" id="installBanner" style="display:none">
     <div class="install-banner-inner">
@@ -205,6 +212,7 @@
   <!-- Service Worker 注册 -->
   <script>
     (function() {
+      if (window.Capacitor) return; // 原生 App 内不注册 Service Worker，也不显示 PWA 安装横幅
       if (!('serviceWorker' in navigator)) return;
       var swReg = null;
       var installEvent = null;
