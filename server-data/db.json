@@ -602,19 +602,6 @@
       "deletedBankIds": [
         "bank_880"
       ]
-    },
-    {
-      "id": "u_13_670acb",
-      "username": "deploytest_1786539102290",
-      "salt": "0e6b1cf8b20d761995aadc6efe589b93",
-      "hash": "740bfa35d8284a893bf24e58ff82ca81cb147d0b5b315c7a591fc1def4967a18e055b09c5486a2a13c681b42b14a289c8861e7e3b108d504cfdc9cca2d927fd7",
-      "isAdmin": false,
-      "hasBaseBank": false,
-      "createdAt": "2026-08-12T12:51:43.872Z",
-      "added": [],
-      "deletedIds": [],
-      "wrongBooks": [],
-      "phone": ""
     }
   ],
   "sessions": {
@@ -658,7 +645,6 @@
     "ebc80284dc2b154cbbeed18a5bfe620d1c9e279d7995b475a11a513967134653": "u_11_ea8166",
     "7383df4f85a9d3a6c285eab5d891021205db71592040605215e5d9bb4d857a43": "u_admin",
     "5fa54f54c423f860189669dae60c8c699aef0a22f12e8286096fd8fa9e25930b": "u_admin",
-    "a53f0e2f5d0619208404ec4a378119444998b178bc607ab0586efa0eedba4aef": "u_13_670acb",
     "43149a88e6b16ce94c446c0aa5b6a3b7e358a8b5c2cde97b024f945d1e95ff22": "u_11_ea8166",
     "2de43559cf61a5bc6d757b5c2f447427f46223165e768643172e6bb8ef61feb6": "u_11_ea8166",
     "5472089d6946ac0578cb0eeee4943ffe527c3db1b0496ee58f9b41981d331b73": "u_11_ea8166",
