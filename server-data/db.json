@@ -31,7 +31,7 @@
       "salt": "39cfc7d77168f77ff85d9e2cce67117f",
       "hash": "f1f951ad08e7675c6373f60110af49b3501b76e5d12619d47c3f588d5f93233291210be1f194571836720ae00768b702a820f419269d6da5f94df7a97dc7e1ef",
       "isAdmin": false,
-      "hasBaseBank": false,
+      "hasBaseBank": true,
       "createdAt": "2026-08-12T07:47:30.025Z",
       "added": [],
       "deletedIds": [
@@ -49,12 +49,7 @@
         "q_msq4iqatk1nq30"
       ],
       "wrongBooks": [],
-      "deletedBankIds": [
-        "bank_gaoshu_tuozhan",
-        "bank_gaoshu_zonghe",
-        "bank_gaoshu_jichu",
-        "bank_sample"
-      ]
+      "deletedBankIds": []
     },
     {
       "id": "u_13_670acb",
