@@ -43,7 +43,12 @@
         "q_msq3espxdea3jo"
       ],
       "wrongBooks": [],
-      "deletedBankIds": []
+      "deletedBankIds": [
+        "bank_gaoshu_tuozhan",
+        "bank_gaoshu_zonghe",
+        "bank_gaoshu_jichu",
+        "bank_sample"
+      ]
     },
     {
       "id": "u_13_670acb",
