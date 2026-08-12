@@ -693,32 +693,6 @@
       "deletedIds": [],
       "wrongBooks": [],
       "phone": ""
-    },
-    {
-      "id": "u_17_bb3f99",
-      "username": "v4_1786540459647",
-      "salt": "1f2d4db6d41b2af804a8c543bdea1ceb",
-      "hash": "383d768eb8f1fb6d78e88acfd29a87231ba03e6feaff0cfa4bda06aadd637cd2f646ff82a4d31aab92c9e60c6e2adac196d5e96c6de9dbff14f025097d9e7b80",
-      "isAdmin": false,
-      "hasBaseBank": false,
-      "createdAt": "2026-08-12T13:14:20.996Z",
-      "added": [
-        {
-          "id": "uq_7_f06156",
-          "bankId": "bank_880",
-          "number": "",
-          "type": "fill",
-          "chapter": "测试",
-          "difficulty": 3,
-          "stem": "v4延迟测试: 2+3=?",
-          "answer": "5",
-          "options": [],
-          "analysis": ""
-        }
-      ],
-      "deletedIds": [],
-      "wrongBooks": [],
-      "phone": ""
     }
   ],
   "sessions": {
@@ -770,7 +744,6 @@
     "92dd883ff99a77ff9019126c9afdcc099e0fccb182e56a498700fc14a45e5b6f": "u_11_ea8166",
     "92a3abda2459bf7b950f2117fcf43f6a1de8568d3d42c19457f39474295608e0": "u_15_5d9608",
     "2fd976cfa261dee9c5c9351d07acd2811dbeb1712dce1e588762fc008f72ec14": "u_16_bd4b62",
-    "470edd926b247c741232b8d2606d45450fb7c1264ecd4dd6ba7c5e5606480fed": "u_17_bb3f99",
     "8075d6a787d9085979d868fa78e26d9a919dcc89dc7b0beb300d81f9cbb9677f": "u_11_ea8166",
     "a6c790a9066ff3f88c432ef5df698891cdda07678d80b8bb490c7f5b2601910b": "u_11_ea8166",
     "8f53531ed1f3b0c90641f06a9b03e9e361fcd0ab472f494aec85e322b9dd28d7": "u_11_ea8166",
