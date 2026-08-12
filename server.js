@@ -374,9 +374,13 @@ function sanitizeQuestion(q) {
   if (type === 'single') answer = answer.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 1);
   else if (type === 'multiple') answer = answer.toUpperCase().replace(/[^A-Z]/g, '').split('').sort().join('');
   const options = Array.isArray(q.options) ? q.options.map((o) => String(o)).filter((s) => s.trim()) : [];
+  // 保留前端传入的自定义题库归属：bankId/bankName 用于在云端模式下按题库重建目录（否则刷新后自定义题库消失）
+  const inBank = String(q.bankId || '').trim();
+  const isCustomBank = inBank.length > 0 && inBank !== BASE.bankMeta.id;
   return {
     id: '',
-    bankId: BASE.bankMeta.id,
+    bankId: isCustomBank ? inBank : BASE.bankMeta.id,
+    bankName: isCustomBank ? String(q.bankName || inBank).trim() : '',
     number: String(q.number || '').trim(),
     type, chapter, difficulty,
     stem, answer,

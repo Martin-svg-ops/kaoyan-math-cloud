@@ -2716,8 +2716,13 @@
     if (!uploadParsed) return;
     if (uploadParsed.isImage) { mergeImageBank(mode); return; }
     if (auth.active) {
-      // 云端模式：逐题写入后端（基础题库不可替换，统一并入总题库）
-      const qs = uploadParsed.questions.slice();
+      // 云端模式：逐题写入后端，并按题库名归并到同一自定义题库（带 bankId+bankName，刷新后可重建目录）
+      const nameInput = $('#uploadBankName');
+      const bankName = (nameInput && nameInput.value.trim()) || uploadParsed.bankName || defaultUploadBankName();
+      // 复用同名已有题库的 bankId，避免重复创建
+      const exist = state.banks.find((b) => b.id !== 'bank_total' && b.name === bankName);
+      const bankId = exist ? exist.id : uid('bank');
+      const qs = uploadParsed.questions.map((q) => Object.assign({}, q, { bankId: bankId, bankName: bankName }));
       uploadParsed = null; showUpload = false;
       (async function () {
         let n = 0;
@@ -2725,7 +2730,7 @@
           try { await API.addQuestion(auth.token, q); n++; } catch (e) { console.warn('[云端] 导入题目失败', e); }
         }
         await loadBankFromServer();
-        toast('已导入 ' + n + ' 道题到云端题库');
+        toast('已导入 ' + n + ' 道题到「' + bankName + '」');
         render();
       })();
       return;
@@ -4483,6 +4488,9 @@
         var i = state.bank.findIndex(function (x) { return x.id === qid; });
         if (i >= 0) state.bank[i] = ru.question;
       } else {
+        // 手动新增：补上题库名，便于云端按 bankId 重建目录
+        var sel = state.banks.find((b) => b.id === (q.bankId || 'bank_total'));
+        if (sel && sel.id !== 'bank_total') q.bankName = sel.name;
         var rn = await API.addQuestion(auth.token, q);
         state.bank.push(rn.question);
       }
