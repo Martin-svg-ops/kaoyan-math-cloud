@@ -615,6 +615,35 @@
         "bank_gaoshu_jichu",
         "bank_sample"
       ]
+    },
+    {
+      "id": "u_19_fc92ba",
+      "username": "crossdev_probe_1786545719744",
+      "salt": "bfcc1808f708f2e35adc50ce5e5d39a8",
+      "hash": "915bccbb846c47505ea3dd6ce671085e791c2633868e351b2d710f9d091691e2a44a79eddb4a394933909415d828f78bb6489204c56de58257c8b32e03bf4568",
+      "isAdmin": false,
+      "hasBaseBank": false,
+      "createdAt": "2026-08-12T14:42:01.376Z",
+      "added": [
+        {
+          "id": "uq_11_81fb50",
+          "bankId": "bank_crossdev_1786545720713",
+          "bankName": "跨设备题库",
+          "number": "",
+          "type": "solve",
+          "chapter": "未分类",
+          "difficulty": 3,
+          "stem": "",
+          "answer": "",
+          "options": [],
+          "analysis": "",
+          "isImage": true,
+          "img": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        }
+      ],
+      "deletedIds": [],
+      "wrongBooks": [],
+      "phone": ""
     }
   ],
   "sessions": {
@@ -674,10 +703,11 @@
     "3edabcc523002c61f6db712a1a4d72f2af56e61df4095cb1bb4fad0a40fc683a": "u_11_ea8166",
     "6eb51698ccaa2c488d2fc8d94632d2b3ee8a62637b4abea0491fc31200f86be0": "u_11_ea8166",
     "b4cea6997fcc7ad7c342d77a686c7a7e78497e280644dc36e57cdbaa231f0c76": "u_11_ea8166",
-    "4a37deaf1b43272e91d70340ea46bf3bc1e9c3c350d327b72db215f4f1a4b445": "u_11_ea8166"
+    "4a37deaf1b43272e91d70340ea46bf3bc1e9c3c350d327b72db215f4f1a4b445": "u_11_ea8166",
+    "16ae32de769ab3aee12e961727c00514a564ba4b9c04ddbae82043157f15727c": "u_19_fc92ba"
   },
   "seq": {
-    "u": 18,
-    "uq": 10
+    "u": 19,
+    "uq": 11
   }
 }
