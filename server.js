@@ -64,7 +64,28 @@ let _gitSyncTimer = null;
 function scheduleGitSync() {
   if (!process.env.GIT_TOKEN) return;
   if (_gitSyncTimer) clearTimeout(_gitSyncTimer);
-  _gitSyncTimer = setTimeout(syncToGit, 3000);
+  _gitSyncTimer = setTimeout(syncToGit, 2000);
+}
+// 推送前（以及 push 被拒后）先拉取远端 db.json 并【合并】进本地+内存（本地优先）。
+// 单写者时通常无变化；多写者争用时可把"被别的实例覆盖掉的题"在下一轮重新推回去，显著减少丢失。
+function pullAndMerge() {
+  if (!process.env.GIT_TOKEN) return false;
+  const token = process.env.GIT_TOKEN;
+  const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+  try {
+    execSync('git fetch ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
+    const tmp = path.join(ROOT, 'server-data', '.remote-db-merge.json');
+    execSync('git show FETCH_HEAD:server-data/db.json > "' + tmp + '" 2>/dev/null', { cwd: ROOT, timeout: 8000 });
+    if (fs.existsSync(tmp)) {
+      try {
+        const remote = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+        const changed = mergeDBIntoLocal(remote); // 本地优先，绝不丢失本地已加的题
+        try { fs.unlinkSync(tmp); } catch (_) {}
+        return changed;
+      } catch (_) { try { fs.unlinkSync(tmp); } catch (_) {} }
+    }
+  } catch (_) { /* 拉取失败，忽略，下一轮再试 */ }
+  return false;
 }
 function syncToGit() {
   _gitSyncTimer = null;
@@ -72,6 +93,7 @@ function syncToGit() {
   const token = process.env.GIT_TOKEN;
   const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
   for (let attempt = 0; attempt < 3; attempt++) {
+    pullAndMerge(); // 推送前先合并远端最新（本地优先），单写者无影响，多写者减少冲突
     try {
       execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
       try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); }
@@ -81,21 +103,8 @@ function syncToGit() {
         console.log('[git-sync] 数据已同步到 GitHub');
         return;
       } catch (e) {
-        // push 被拒（master 移动靶）：拉取远端 db.json 合并到本地+内存，重试
-        console.warn('[git-sync] push 被拒，合并远端后重试 (' + (attempt + 1) + '/3)');
-        try {
-          execSync('git fetch ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
-          const tmp = path.join(ROOT, 'server-data', '.remote-db-merge.json');
-          execSync('git show FETCH_HEAD:server-data/db.json > "' + tmp + '" 2>/dev/null', { cwd: ROOT, timeout: 8000 });
-          if (fs.existsSync(tmp)) {
-            try {
-              const remote = JSON.parse(fs.readFileSync(tmp, 'utf8'));
-              mergeDBIntoLocal(remote); // 把远端独有用户/题并入本地+内存
-              saveDB(); // 重新落盘（含合并结果），下一轮循环再 commit+push
-            } catch (_) { /* 远端数据损坏，忽略 */ }
-            try { fs.unlinkSync(tmp); } catch (_) {}
-          }
-        } catch (_) { /* 拉取失败，下一轮重试 */ }
+        // push 被拒（master 移动靶）：下一轮循环开头 pullAndMerge 会再次拉取合并后重试
+        console.warn('[git-sync] push 被拒，重试 (' + (attempt + 1) + '/3)');
       }
     } catch (e) {
       console.error('[git-sync] 同步异常：', String(e.message || e).slice(0, 160));
