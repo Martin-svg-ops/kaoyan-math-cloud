@@ -2811,15 +2811,27 @@
       uploadParsed = null; saveData(); render();
       (async function () {
         let n = 0, err = 0;
-        for (const q of qs) {
+        // 分批上云：每批按累计体积切（约 45MB），整批只触发一次 git-sync，避免逐题推送累积成几十分钟
+        const BATCH_BYTES = 45 * 1024 * 1024;
+        let batch = [], batchLen = 0;
+        const flush = async () => {
+          if (!batch.length) return;
           try {
-            const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
-            if (q.img && q.img.length > 600000) { // 大图压缩，减小云端体积并避免超服务端上限
-              try { payload.img = await downScaleDataUrl(q.img, 1280, 0.72); } catch (e) {}
-            }
-            await API.addQuestion(auth.token, payload); n++;
-          } catch (e) { err++; console.warn('[云端] 图片题上传失败', e); }
+            const r = await API.addQuestionsBatch(auth.token, batch);
+            n += (r && typeof r.added === 'number' ? r.added : batch.length);
+          } catch (e) { err += batch.length; console.warn('[云端] 批量上传失败', e); }
+          batch = []; batchLen = 0;
+        };
+        for (const q of qs) {
+          const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
+          if (q.img && q.img.length > 600000) { // 大图压缩，减小云端体积并避免超服务端上限
+            try { payload.img = await downScaleDataUrl(q.img, 1280, 0.72); } catch (e) {}
+          }
+          const len = payload.img ? payload.img.length : (payload.stem || '').length;
+          if (batchLen + len > BATCH_BYTES && batch.length) await flush();
+          batch.push(payload); batchLen += len;
         }
+        await flush();
         await loadBankFromServer();
         if (err === 0) {
           toast('已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步）');
@@ -4189,6 +4201,7 @@
     bank: function (token) { return this._req('GET', '/api/bank', null, token); },
     deleteBank: function (token, bankId) { return this._req('DELETE', '/api/bank/' + encodeURIComponent(bankId), null, token); },
     addQuestion: function (token, q) { return this._req('POST', '/api/questions', q, token); },
+    addQuestionsBatch: function (token, arr) { return this._req('POST', '/api/questions/batch', { questions: arr }, token); },
     updateQuestion: function (token, id, q) { return this._req('PUT', '/api/questions/' + encodeURIComponent(id), q, token); },
     deleteQuestion: function (token, id) { return this._req('DELETE', '/api/questions/' + encodeURIComponent(id), null, token); },
     adminUsers: function (token) { return this._req('GET', '/api/admin/users', null, token); },

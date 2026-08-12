@@ -348,7 +348,7 @@ function sendJSON(res, code, obj) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 30e6) reject(new Error('payload too large')); });
+    req.on('data', (c) => { data += c; if (data.length > 60e6) reject(new Error('payload too large')); });
     req.on('end', () => {
       if (!data) return resolve({});
       try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('invalid json')); }
@@ -737,6 +737,28 @@ async function handleApi(req, res, url) {
     me.added.push(q);
     saveDB();
     return sendJSON(res, 200, { question: q });
+  }
+
+  // 批量新增题目（图片/切片题库整批上云，仅一次落库+一次 git-sync，解决逐题推送极慢问题）
+  if (p === '/api/questions/batch' && method === 'POST') {
+    if (!me) return sendJSON(res, 401, { error: '未登录' });
+    const b = await readBody(req);
+    const arr = Array.isArray(b.questions) ? b.questions : [];
+    me.added = me.added || [];
+    const seen = new Set(me.added.map((x) => x.id));
+    let added = 0, skipped = 0;
+    for (const raw of arr) {
+      const q = sanitizeQuestion(raw);
+      const isImg = q.isImage && q.img;
+      if (!q.stem && !isImg) { skipped++; continue; }
+      if (!q.answer && !isImg) { skipped++; continue; }
+      if ((q.type === 'single' || q.type === 'multiple') && q.options.length < 2) { skipped++; continue; }
+      if (!q.id) q.id = newSeq('uq');
+      if (seen.has(q.id)) { skipped++; continue; }
+      seen.add(q.id); me.added.push(q); added++;
+    }
+    if (added > 0) saveDB(); // 关键：整批只 saveDB 一次 → 只 git-sync 一次
+    return sendJSON(res, 200, { added, skipped, total: me.added.length });
   }
 
   // 删除题目 / 更新题目
