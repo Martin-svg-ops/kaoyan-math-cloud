@@ -719,60 +719,6 @@
       "deletedIds": [],
       "wrongBooks": [],
       "phone": ""
-    },
-    {
-      "id": "u_18_f94e00",
-      "username": "banktest_1786542355463",
-      "salt": "972c720407003d3198d9b4a3308e8c2c",
-      "hash": "0ae254fdf83f3715b039d6c99d561f0250de6e612bd01d82725fa052d47ef396cce50129ad85c09ed730923f825e3b9b2f086a4b602e5c2b4f71248dd83bb3b5",
-      "isAdmin": false,
-      "hasBaseBank": false,
-      "createdAt": "2026-08-12T13:45:57.203Z",
-      "added": [
-        {
-          "id": "uq_8_b2e872",
-          "bankId": "bank_msq56wtj",
-          "bankName": "验证题库A",
-          "number": "",
-          "type": "fill",
-          "chapter": "测试章",
-          "difficulty": 3,
-          "stem": "题1：若 f(x)=1x，则 f(1)=?",
-          "answer": "1",
-          "options": [],
-          "analysis": ""
-        },
-        {
-          "id": "uq_9_860b98",
-          "bankId": "bank_msq56wtj",
-          "bankName": "验证题库A",
-          "number": "",
-          "type": "fill",
-          "chapter": "测试章",
-          "difficulty": 3,
-          "stem": "题2：若 f(x)=2x，则 f(1)=?",
-          "answer": "2",
-          "options": [],
-          "analysis": ""
-        },
-        {
-          "id": "uq_10_460179",
-          "bankId": "bank_msq56wtj",
-          "bankName": "验证题库A",
-          "number": "",
-          "type": "fill",
-          "chapter": "测试章",
-          "difficulty": 3,
-          "stem": "题3：若 f(x)=3x，则 f(1)=?",
-          "answer": "3",
-          "options": [],
-          "analysis": ""
-        }
-      ],
-      "deletedIds": [],
-      "wrongBooks": [],
-      "phone": "",
-      "deletedBankIds": []
     }
   ],
   "sessions": {
@@ -830,7 +776,6 @@
     "8f53531ed1f3b0c90641f06a9b03e9e361fcd0ab472f494aec85e322b9dd28d7": "u_11_ea8166",
     "ec0a20aa1dc79b3c5e1fe6b04413c32042cd39f78bcc7f2daaa241518f2b5756": "u_11_ea8166",
     "9bf66568fba3638042d3186b201bcf7a4b8deed8d44a5af5f56972b54683a24f": "u_11_ea8166",
-    "481542148343c53eb1549aff46563b4a742ad3dc3375e38530a47669b5f82fe0": "u_18_f94e00",
     "3e2ef1fe6c1e316189c6335452f9220d28cc52e396889c81c2197877a630e07a": "u_11_ea8166",
     "eb43e422e49d5a6dad5bfd8e7910e51adccdbe4ded7963af5885c4dc32b9a12d": "u_admin",
     "c2f60a2fa18e550e6ad3dd3ed30d4cdf7c65c0616c3bbd3ab0c6ddf2c6c044c0": "u_admin"
