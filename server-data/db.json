@@ -88,6 +88,32 @@
       "deletedIds": [],
       "wrongBooks": [],
       "phone": ""
+    },
+    {
+      "id": "u_15_5d9608",
+      "username": "win_1786540072280",
+      "salt": "70d31b9e69e51131c3de37dbf8837d29",
+      "hash": "177c373ae6abfff9b1614918ab53785f4ceb3e545de681d95e7ec0e6c2b8393d982646695805bab726c118b6fd9e9f5d6f8924e285b6852d016d656b8dfcac85",
+      "isAdmin": false,
+      "hasBaseBank": false,
+      "createdAt": "2026-08-12T13:07:53.966Z",
+      "added": [
+        {
+          "id": "uq_5_ff17ac",
+          "bankId": "bank_880",
+          "number": "",
+          "type": "fill",
+          "chapter": "测试",
+          "difficulty": 3,
+          "stem": "窗口测试题: f(x)=x, f(1)=?",
+          "answer": "1",
+          "options": [],
+          "analysis": ""
+        }
+      ],
+      "deletedIds": [],
+      "wrongBooks": [],
+      "phone": ""
     }
   ],
   "sessions": {
@@ -136,10 +162,11 @@
     "43149a88e6b16ce94c446c0aa5b6a3b7e358a8b5c2cde97b024f945d1e95ff22": "u_11_ea8166",
     "2de43559cf61a5bc6d757b5c2f447427f46223165e768643172e6bb8ef61feb6": "u_11_ea8166",
     "5472089d6946ac0578cb0eeee4943ffe527c3db1b0496ee58f9b41981d331b73": "u_11_ea8166",
-    "92dd883ff99a77ff9019126c9afdcc099e0fccb182e56a498700fc14a45e5b6f": "u_11_ea8166"
+    "92dd883ff99a77ff9019126c9afdcc099e0fccb182e56a498700fc14a45e5b6f": "u_11_ea8166",
+    "92a3abda2459bf7b950f2117fcf43f6a1de8568d3d42c19457f39474295608e0": "u_15_5d9608"
   },
   "seq": {
-    "u": 14,
-    "uq": 4
+    "u": 15,
+    "uq": 5
   }
 }
