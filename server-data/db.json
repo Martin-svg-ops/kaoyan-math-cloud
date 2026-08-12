@@ -8,7 +8,9 @@
       "isAdmin": true,
       "createdAt": "2026-08-09T00:22:33.887Z",
       "added": [],
-      "deletedIds": [],
+      "deletedIds": [
+        "q_msq5d6fupqux3a"
+      ],
       "deletedBankIds": [],
       "wrongBooks": []
     },
