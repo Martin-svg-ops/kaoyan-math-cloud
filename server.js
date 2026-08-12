@@ -57,26 +57,52 @@ function saveDB() {
   catch (e) { console.error('[server] 写入数据库失败：', e); }
   scheduleGitSync();
 }
-// Git 自动同步：每次数据变更后 5 秒内自动 commit+push 到 GitHub，确保部署间数据不丢失
+// Git 自动同步：每次数据变更后 3 秒内自动 commit+push 到 GitHub，确保部署/实例回收间数据不丢失
+// 关键修复：master 是「移动靶」（部署+多实例并发改写），push 常被 non-fast-forward 拒绝；
+// 因此 push 失败时不放弃，而是拉取远端 db.json、合并（含远端独有的题），再重试推送（最多 3 次）。
 let _gitSyncTimer = null;
 function scheduleGitSync() {
   if (!process.env.GIT_TOKEN) return;
   if (_gitSyncTimer) clearTimeout(_gitSyncTimer);
-  _gitSyncTimer = setTimeout(() => {
-    _gitSyncTimer = null;
+  _gitSyncTimer = setTimeout(syncToGit, 3000);
+}
+function syncToGit() {
+  _gitSyncTimer = null;
+  if (!process.env.GIT_TOKEN) return;
+  const token = process.env.GIT_TOKEN;
+  const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const token = process.env.GIT_TOKEN;
-      const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
       execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
       try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); }
-      catch (_) { /* 无变更，跳过 */ return; }
-      // Render 环境是 detached HEAD，需显式 push 当前 HEAD 到远程 master 分支
-      execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 15000 });
-      console.log('[git-sync] 数据已同步到 GitHub');
+      catch (_) { return; } // 无变更可提交，已是最新
+      try {
+        execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 15000 });
+        console.log('[git-sync] 数据已同步到 GitHub');
+        return;
+      } catch (e) {
+        // push 被拒（master 移动靶）：拉取远端 db.json 合并到本地+内存，重试
+        console.warn('[git-sync] push 被拒，合并远端后重试 (' + (attempt + 1) + '/3)');
+        try {
+          execSync('git fetch ' + repo + ' master 2>&1', { cwd: ROOT, timeout: 15000 });
+          const tmp = path.join(ROOT, 'server-data', '.remote-db-merge.json');
+          execSync('git show FETCH_HEAD:server-data/db.json > "' + tmp + '" 2>/dev/null', { cwd: ROOT, timeout: 8000 });
+          if (fs.existsSync(tmp)) {
+            try {
+              const remote = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+              mergeDBIntoLocal(remote); // 把远端独有用户/题并入本地+内存
+              saveDB(); // 重新落盘（含合并结果），下一轮循环再 commit+push
+            } catch (_) { /* 远端数据损坏，忽略 */ }
+            try { fs.unlinkSync(tmp); } catch (_) {}
+          }
+        } catch (_) { /* 拉取失败，下一轮重试 */ }
+      }
     } catch (e) {
-      console.error('[git-sync] 同步失败：', String(e.message || e).slice(0, 200));
+      console.error('[git-sync] 同步异常：', String(e.message || e).slice(0, 160));
+      return;
     }
-  }, 5000);
+  }
+  console.error('[git-sync] 重试 3 次仍失败，本次数据可能未持久化（请检查 GIT_TOKEN / 网络）');
 }
 // 启动时从 Git 拉取并【合并】最新数据（本地优先，避免部署覆盖运行时新增的用户）
 function mergeDBIntoLocal(remote) {
@@ -88,12 +114,28 @@ function mergeDBIntoLocal(remote) {
   }
   const ids = new Set(local.users.map((u) => u.id));
   (remote.users || []).forEach((ru) => {
-    if (!ids.has(ru.id)) { local.users.push(ru); ids.add(ru.id); } // 远程独有的用户并入本地；本地已有的保留（本地优先，不覆盖）
+    if (!ids.has(ru.id)) { local.users.push(ru); ids.add(ru.id); return; } // 远程独有用户直接并入
+    // 本地已有该用户：本地优先，绝不覆盖已有数据；但把远端【独有的】数组项并入，避免冷启动/回收丢题
+    const lu = local.users.find((u) => u.id === ru.id);
+    const mergeArr = (key) => {
+      const set = new Set((lu[key] || []).map((x) => (x && x.id != null) ? x.id : x));
+      (ru[key] || []).forEach((x) => {
+        const xid = (x && x.id != null) ? x.id : x;
+        if (!set.has(xid)) { lu[key] = lu[key] || []; lu[key].push(x); set.add(xid); }
+      });
+    };
+    mergeArr('added');          // 用户新增的题目（最重要：防止刷新/回收后丢题）
+    mergeArr('deletedIds');     // 隐藏的题目
+    mergeArr('wrongBooks');     // 错题本
+    mergeArr('deletedBankIds'); // 已删除的题库
+    if (!lu.phone && ru.phone) lu.phone = ru.phone; // 远端已绑定手机则补齐
+    if (lu.hasBaseBank == null && ru.hasBaseBank != null) lu.hasBaseBank = ru.hasBaseBank;
   });
   // sessions / seq 取本地与远程的并集（远程优先补齐，避免丢掉其他实例的会话）
   local.sessions = Object.assign({}, remote.sessions || {}, local.sessions);
   local.seq = Object.assign({}, remote.seq || {}, local.seq);
   fs.writeFileSync(DB_FILE, JSON.stringify(local, null, 2));
+  db = local; // 关键：同步到内存，否则后续 saveDB 会用旧 db 覆盖本次合并结果
   return true;
 }
 function initGit() {
