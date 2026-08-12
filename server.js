@@ -64,7 +64,7 @@ let _gitSyncTimer = null;
 function scheduleGitSync() {
   if (!process.env.GIT_TOKEN) return;
   if (_gitSyncTimer) clearTimeout(_gitSyncTimer);
-  _gitSyncTimer = setTimeout(syncToGit, 2000);
+  _gitSyncTimer = setTimeout(syncToGit, 500);
 }
 // 推送前（以及 push 被拒后）先拉取远端 db.json 并【合并】进本地+内存（本地优先）。
 // 单写者时通常无变化；多写者争用时可把"被别的实例覆盖掉的题"在下一轮重新推回去，显著减少丢失。
@@ -92,23 +92,33 @@ function syncToGit() {
   if (!process.env.GIT_TOKEN) return;
   const token = process.env.GIT_TOKEN;
   const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
-  for (let attempt = 0; attempt < 3; attempt++) {
-    pullAndMerge(); // 推送前先合并远端最新（本地优先），单写者无影响，多写者减少冲突
+  // 单写者（已停 -lpfl）：日常直接 commit + push，不做预 fetch（避免每次数十秒网络开销）
+  const commitIfChanged = () => {
+    try { execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 }); }
+    catch (_) { return false; }
+    try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); return true; }
+    catch (_) { return false; } // 无变更
+  };
+  if (commitIfChanged()) {
     try {
-      execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 });
-      try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); }
-      catch (_) { return; } // 无变更可提交，已是最新
-      try {
-        execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 15000 });
-        console.log('[git-sync] 数据已同步到 GitHub');
-        return;
-      } catch (e) {
-        // push 被拒（master 移动靶）：下一轮循环开头 pullAndMerge 会再次拉取合并后重试
-        console.warn('[git-sync] push 被拒，重试 (' + (attempt + 1) + '/3)');
-      }
-    } catch (e) {
-      console.error('[git-sync] 同步异常：', String(e.message || e).slice(0, 160));
+      execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 20000 });
+      console.log('[git-sync] 数据已同步到 GitHub');
       return;
+    } catch (e) {
+      console.warn('[git-sync] 直接 push 被拒，转入 fetch+merge 重试（防御多写者/部署并发）');
+    }
+  } else {
+    return; // 无本地变更，无需推送
+  }
+  // 仅当 push 被拒（master 移动靶）才拉取远端合并后重试，最多 3 次
+  for (let attempt = 0; attempt < 3; attempt++) {
+    pullAndMerge(); // 本地优先合并远端独有项
+    if (commitIfChanged()) {
+      try {
+        execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 20000 });
+        console.log('[git-sync] 数据已同步到 GitHub（merge 后）');
+        return;
+      } catch (_) { console.warn('[git-sync] push 被拒，重试 (' + (attempt + 1) + '/3)'); }
     }
   }
   console.error('[git-sync] 重试 3 次仍失败，本次数据可能未持久化（请检查 GIT_TOKEN / 网络）');
