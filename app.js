@@ -4266,7 +4266,11 @@
       render();
       toast(loginMode === 'login' ? '欢迎回来，' + r.user.username : '注册成功，已登录为 ' + r.user.username);
     } catch (e) {
-      if (errEl) errEl.textContent = (e && e.message) || '操作失败';
+      var msg = (e && (typeof e === 'string' ? e : e.message)) || '操作失败';
+      if (loginMode === 'register' && /用户名已存在|already exists/i.test(msg)) {
+        msg = '该用户名已注册，请点上方「登录」切换后登录';
+      }
+      if (errEl) errEl.textContent = msg;
     } finally {
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = loginMode === 'login' ? '登 录' : '注册并进入'; }
     }
