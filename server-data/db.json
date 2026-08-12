@@ -22,6 +22,18 @@
       "added": [],
       "deletedIds": [],
       "wrongBooks": []
+    },
+    {
+      "id": "u_11_ea8166",
+      "username": "DB",
+      "salt": "39cfc7d77168f77ff85d9e2cce67117f",
+      "hash": "f1f951ad08e7675c6373f60110af49b3501b76e5d12619d47c3f588d5f93233291210be1f194571836720ae00768b702a820f419269d6da5f94df7a97dc7e1ef",
+      "isAdmin": false,
+      "hasBaseBank": false,
+      "createdAt": "2026-08-12T07:47:30.025Z",
+      "added": [],
+      "deletedIds": [],
+      "wrongBooks": []
     }
   ],
   "sessions": {
@@ -54,10 +66,11 @@
     "be89d80e60736db07c8c47041dd71cea4995684fa4e4af6ae589de9fb96a712d": "u_admin",
     "83f1847b01dab46f37b5157f444c68047b7f69adb6b56fb86c24d4cb7e9269d4": "u_admin",
     "9e43e6cfc73f56a63b6f076b46f36476d4fe8d07e6324940e4e3dd572e1091ce": "u_admin",
-    "36036a23edd022cffca8938ea4a2015a23c6b717824f4359ae88ec34c030f858": "u_10_bfa928"
+    "36036a23edd022cffca8938ea4a2015a23c6b717824f4359ae88ec34c030f858": "u_10_bfa928",
+    "33e43477c7d3e9c54eaeea14fa83cdf6dbd8b716917dd219601c6851b042bc23": "u_11_ea8166"
   },
   "seq": {
-    "u": 10,
+    "u": 11,
     "uq": 2
   }
 }
