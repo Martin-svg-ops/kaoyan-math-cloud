@@ -348,7 +348,7 @@ function sendJSON(res, code, obj) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 15e6) reject(new Error('payload too large')); });
+    req.on('data', (c) => { data += c; if (data.length > 30e6) reject(new Error('payload too large')); });
     req.on('end', () => {
       if (!data) return resolve({});
       try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('invalid json')); }

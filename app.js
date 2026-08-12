@@ -2810,24 +2810,28 @@
     if (auth.active) {
       uploadParsed = null; saveData(); render();
       (async function () {
-        let n = 0;
+        let n = 0, err = 0;
         for (const q of qs) {
           try {
             const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
-            if (q.img && q.img.length > 800000) { // 超大图片压缩，减小云端体积
-              try { payload.img = await downScaleDataUrl(q.img, 1280, 0.78); } catch (e) {}
+            if (q.img && q.img.length > 600000) { // 大图压缩，减小云端体积并避免超服务端上限
+              try { payload.img = await downScaleDataUrl(q.img, 1280, 0.72); } catch (e) {}
             }
             await API.addQuestion(auth.token, payload); n++;
-          } catch (e) { console.warn('[云端] 图片题上传失败', e); }
+          } catch (e) { err++; console.warn('[云端] 图片题上传失败', e); }
         }
         await loadBankFromServer();
-        toast('已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步）');
+        if (err === 0) {
+          toast('已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步）');
+        } else {
+          toast('⚠️ 已同步 ' + n + ' 道，' + err + ' 道上传失败（检查网络后重新上传该题库）');
+        }
         render();
       })();
       return;
     }
     uploadParsed = null; saveData();
-    toast('已入库 ' + qs.length + ' 道图片题到「' + name + '」（已本机保存，刷新不丢）');
+    toast('⚠️ 未登录：图片题仅存本机浏览器，换设备/换浏览器不可见！请先登录 DB 账号再上传');
     render();
   }
 
