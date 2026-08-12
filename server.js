@@ -378,14 +378,16 @@ function sanitizeQuestion(q) {
   const inBank = String(q.bankId || '').trim();
   const isCustomBank = inBank.length > 0 && inBank !== BASE.bankMeta.id;
   return {
-    id: '',
+    id: String(q.id || '').trim(),
     bankId: isCustomBank ? inBank : BASE.bankMeta.id,
     bankName: isCustomBank ? String(q.bankName || inBank).trim() : '',
     number: String(q.number || '').trim(),
     type, chapter, difficulty,
     stem, answer,
     options,
-    analysis: String(q.analysis || '').trim()
+    analysis: String(q.analysis || '').trim(),
+    isImage: !!q.isImage,
+    img: String(q.img || '').trim()
   };
 }
 
@@ -726,10 +728,11 @@ async function handleApi(req, res, url) {
   if (p === '/api/questions' && method === 'POST') {
     const b = await readBody(req);
     const q = sanitizeQuestion(b);
-    if (!q.stem) return sendJSON(res, 400, { error: '题干不能为空' });
+    const isImg = q.isImage && q.img;
+    if (!q.stem && !isImg) return sendJSON(res, 400, { error: '题干不能为空' });
     if ((q.type === 'single' || q.type === 'multiple') && q.options.length < 2) return sendJSON(res, 400, { error: '选择题至少需要 2 个选项' });
-    if (!q.answer) return sendJSON(res, 400, { error: '答案不能为空' });
-    q.id = newSeq('uq');
+    if (!q.answer && !isImg) return sendJSON(res, 400, { error: '答案不能为空' });
+    q.id = q.id || newSeq('uq');
     me.added = me.added || [];
     me.added.push(q);
     saveDB();

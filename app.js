@@ -721,19 +721,39 @@
       tx.onerror = () => reject(tx.error);
     });
   }
-  // 启动时把 IndexedDB 中的图片题库合并回内存 state（刷新后不丢）
+  // 启动时把 IndexedDB 中的图片题库合并回内存 state（刷新后不丢）；
+  // 云端模式做镜像对齐：清理云端已删除的题/题库，防止跨设备删除后本地复活
   async function loadUserBanksIntoState() {
     try {
       const recs = await idbGetAllBanks();
       if (!recs.length) return;
-      recs.forEach((rec) => {
+      const deletedBanks = new Set(state.deletedBankIds || []);
+      const cloudByBank = {};
+      state.bank.forEach((q) => { (cloudByBank[q.bankId] = cloudByBank[q.bankId] || new Set()).add(q.id); });
+      for (const rec of recs) {
+        // 云端已软删除该题库：清理本地镜像，不再合并
+        if (deletedBanks.has(rec.id)) {
+          try { await idbDeleteBank(rec.id); } catch (e) {}
+          imgBankIds.delete(rec.id);
+          continue;
+        }
         imgBankIds.add(rec.id);
         if (!state.banks.some((b) => b.id === rec.id)) {
           state.banks.push({ id: rec.id, name: rec.name, createdAt: rec.createdAt, userBank: true, imgBank: true });
         }
+        const cloudIds = cloudByBank[rec.id];
         const ids = new Set(state.bank.map((q) => q.id));
         (rec.questions || []).forEach((q) => { if (!ids.has(q.id)) { state.bank.push(q); ids.add(q.id); } });
-      });
+        // 镜像对齐：清理本地 IndexedDB 中云端已删除的题（防跨设备删除后本地复活）
+        if (cloudIds) {
+          const kept = (rec.questions || []).filter((q) => cloudIds.has(q.id));
+          if (kept.length !== (rec.questions || []).length) {
+            rec.questions = kept;
+            if (!kept.length) { try { await idbDeleteBank(rec.id); imgBankIds.delete(rec.id); } catch (e) {} }
+            else { try { await idbPutBank(rec); } catch (e) {} }
+          }
+        }
+      }
       render();
     } catch (e) {
       console.warn('读取本地图片题库失败', e);
@@ -2762,7 +2782,8 @@
     render();
   }
 
-  // 图片题库入库：题目（含 dataURL）写入 IndexedDB，localStorage 仅保留轻量元数据
+  // 图片题库入库：题目（含 dataURL）写入 IndexedDB（本机缓存，刷新不丢）；
+  // 云端模式下同时逐题写入后端，实现跨设备/跨浏览器同步（换设备也能看到图片题库）
   async function mergeImageBank(mode) {
     const nameInput = $('#uploadBankName');
     const name = (nameInput && nameInput.value.trim()) || uploadParsed.bankName || defaultUploadBankName();
@@ -2778,7 +2799,7 @@
       state.banks.push(bank);
     }
     imgBankIds.add(bank.id);
-    const qs = uploadParsed.questions.map((q) => Object.assign({}, q, { bankId: bank.id }));
+    const qs = uploadParsed.questions.map((q) => Object.assign({}, q, { bankId: bank.id, isImage: true }));
     state.bank = state.bank.concat(qs);
     try {
       await idbPutBank({ id: bank.id, name: bank.name, createdAt: bank.createdAt, questions: qs });
@@ -2786,8 +2807,26 @@
       console.warn('图片题库本机保存失败', e);
       toast('当前浏览器不支持本地数据库，图片题库仅在本次打开期间有效');
     }
-    saveData();
-    uploadParsed = null;
+    if (auth.active) {
+      uploadParsed = null; saveData(); render();
+      (async function () {
+        let n = 0;
+        for (const q of qs) {
+          try {
+            const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
+            if (q.img && q.img.length > 800000) { // 超大图片压缩，减小云端体积
+              try { payload.img = await downScaleDataUrl(q.img, 1280, 0.78); } catch (e) {}
+            }
+            await API.addQuestion(auth.token, payload); n++;
+          } catch (e) { console.warn('[云端] 图片题上传失败', e); }
+        }
+        await loadBankFromServer();
+        toast('已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步）');
+        render();
+      })();
+      return;
+    }
+    uploadParsed = null; saveData();
     toast('已入库 ' + qs.length + ' 道图片题到「' + name + '」（已本机保存，刷新不丢）');
     render();
   }
@@ -4161,6 +4200,7 @@
     const d = await API.bank(auth.token);
     state.banks = d.banks;
     state.bank = d.bank;
+    state.deletedBankIds = d.deletedBankIds || [];
     // 云端模式：服务器是题库的唯一权威来源，不再注入本地预置题库
     // 但图片/PDF 切片题库存于本机 IndexedDB，需在重置 state.banks 后重新合并回来，否则刷新即丢失
     await loadUserBanksIntoState();
