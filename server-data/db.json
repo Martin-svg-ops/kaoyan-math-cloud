@@ -654,6 +654,21 @@
           "analysis": "",
           "isImage": true,
           "img": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        },
+        {
+          "id": "uq_13_c54da0",
+          "bankId": "bank_crossdev_1786545720713",
+          "bankName": "跨设备题库",
+          "number": "",
+          "type": "solve",
+          "chapter": "未分类",
+          "difficulty": 3,
+          "stem": "",
+          "answer": "",
+          "options": [],
+          "analysis": "",
+          "isImage": true,
+          "img": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         }
       ],
       "deletedIds": [],
@@ -723,6 +738,6 @@
   },
   "seq": {
     "u": 19,
-    "uq": 12
+    "uq": 13
   }
 }
