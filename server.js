@@ -702,18 +702,17 @@ async function handleApi(req, res, url) {
     const bankId = decodeURIComponent(mBankDel[1]);
     me.deletedBankIds = me.deletedBankIds || [];
     if (!me.deletedBankIds.includes(bankId)) me.deletedBankIds.push(bankId);
-    // 移除该题库中用户新增的题目
-    if (bankId !== BASE.bankMeta.id) {
-      me.added = (me.added || []).filter(q => q.bankId !== bankId);
-    } else {
-      // 删除基础题库：标记所有基础题 ID 为已删除
+    // 软删除：只标记题库为已删除（effectiveBank 会据此过滤），不再物理清空 me.added。
+    // 此前「删除整个题库」会把用户新增的题连根清空，实例重启/刷新后永久丢失；改为软删除后，
+    // 题仍保留在 added 中，取消删除（从 deletedBankIds 移除该 bankId）即可恢复显示。
+    if (bankId === BASE.bankMeta.id) {
+      // 删除基础题库：仅标记所有基础题 ID 为已删除（隐藏，不删 added）
       BASE.questions.forEach(q => {
         if (!(me.deletedIds || []).includes(q.id)) {
           me.deletedIds = me.deletedIds || [];
           me.deletedIds.push(q.id);
         }
       });
-      me.added = (me.added || []).filter(q => q.bankId !== BASE.bankMeta.id);
     }
     saveDB();
     return sendJSON(res, 200, { ok: true });
