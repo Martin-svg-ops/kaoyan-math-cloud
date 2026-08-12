@@ -37,35 +37,6 @@
       "deletedIds": [],
       "wrongBooks": [],
       "deletedBankIds": []
-    },
-    {
-      "id": "u_12_cc6adb",
-      "username": "systest",
-      "salt": "fd85ccca92356bff05b910367ec125bf",
-      "hash": "156cf947aa558595fc1e90273d8c81c5acd05cfb4f9044670f421ff8c53dd1d16036eb333cc2a6b4d6e56858068f9c98d0375df6ce65e92cbf828ff4905aa2c1",
-      "isAdmin": false,
-      "hasBaseBank": false,
-      "createdAt": "2026-08-12T12:25:04.667Z",
-      "added": [
-        {
-          "id": "uq_3_3a789f",
-          "bankId": "bank_880",
-          "number": "",
-          "type": "single",
-          "chapter": "��֤",
-          "difficulty": 3,
-          "stem": "�־û���֤��",
-          "answer": "A",
-          "options": [
-            "A",
-            "B"
-          ],
-          "analysis": ""
-        }
-      ],
-      "deletedIds": [],
-      "wrongBooks": [],
-      "phone": ""
     }
   ],
   "sessions": {
@@ -105,8 +76,7 @@
     "ff676358d68e81c712695f6868b2959d8c322c78e96c9954c69532e075b34feb": "u_10_bfa928",
     "4c14a85f11eb59d3d565400a4fd066ccc8b30be027280d80e93ccf9348eeee3a": "u_11_ea8166",
     "43ff6d913fc046df57bd192b75d72aa6df3a530a41935c31eeea56e4e5c518b6": "u_admin",
-    "41119439b005c2d5cc8f45759a901c0fd17a8d2d72cd6c1b42d5badfae97687e": "u_12_cc6adb",
-    "a05b95cc26819b3a42ec8ac93ae4d73c524561041f904549d886991c91b667e2": "u_12_cc6adb"
+    "e977fb1af592f01c6ee92d9a716076a74b70c109659d563c3071498813eed5fa": "u_admin"
   },
   "seq": {
     "u": 12,
