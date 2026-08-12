@@ -149,7 +149,20 @@
       "isAdmin": false,
       "hasBaseBank": false,
       "createdAt": "2026-08-12T13:14:20.996Z",
-      "added": [],
+      "added": [
+        {
+          "id": "uq_7_f06156",
+          "bankId": "bank_880",
+          "number": "",
+          "type": "fill",
+          "chapter": "测试",
+          "difficulty": 3,
+          "stem": "v4延迟测试: 2+3=?",
+          "answer": "5",
+          "options": [],
+          "analysis": ""
+        }
+      ],
       "deletedIds": [],
       "wrongBooks": [],
       "phone": ""
@@ -208,6 +221,6 @@
   },
   "seq": {
     "u": 17,
-    "uq": 6
+    "uq": 7
   }
 }
