@@ -3780,6 +3780,13 @@
       saveQuestion(btn.dataset.qid || '');
     } else if (action === 'logout') {
       doLogout();
+    } else if (action === 'show-login') {
+      var lp = document.getElementById('loginPage');
+      var aw = document.getElementById('appWrap');
+      if (lp) lp.style.display = '';
+      if (aw) aw.style.display = 'none';
+      var u = document.getElementById('loginUser');
+      if (u) u.focus();
     } else if (action === 'admin-view-user') {
       renderAdminUserBank(btn.dataset.uid);
     } else if (action === 'admin-back') {
@@ -4155,11 +4162,15 @@
       panel.className = 'sidebar-user';
       sb.appendChild(panel);
     }
+    panel.style.display = '';
     if (!auth.active || !auth.user) {
-      panel.style.display = 'none';
+      if (state.backendOffline) {
+        panel.innerHTML = '<div class="sidebar-user-row"><span class="user-greet">离线模式</span><span class="user-name">未连接云端</span></div>';
+      } else {
+        panel.innerHTML = '<div class="sidebar-user-row"><span class="user-greet">未登录</span><button class="user-logout" data-action="show-login" type="button">去登录</button></div>';
+      }
       return;
     }
-    panel.style.display = '';
     var role = auth.user && auth.user.isAdmin ? ' <span class="badge badge-blue">管理者</span>' : '';
     panel.innerHTML = '<div class="sidebar-user-row">' +
       '<span class="user-greet">当前账号</span>' +
@@ -4366,12 +4377,15 @@
   async function boot() {
     initLoginPage();
 
-    // 先尝试连接后端
+    // 先尝试连接后端（Render 免费实例冷启动可能首次超时，重试 3 次）
     var hasBackend = false;
-    try {
-      var h = await API.health();
-      if (h && h.multiuser) hasBackend = true;
-    } catch (e) { hasBackend = false; }
+    for (var i = 0; i < 3; i++) {
+      try {
+        var h = await API.health();
+        if (h && h.multiuser) { hasBackend = true; break; }
+      } catch (e) { /* 继续重试 */ }
+      if (i < 2) await new Promise(function(r){ setTimeout(r, 1500); });
+    }
 
     if (hasBackend) {
       // 云端模式：必须登录
