@@ -34,7 +34,11 @@
       "hasBaseBank": false,
       "createdAt": "2026-08-12T07:47:30.025Z",
       "added": [],
-      "deletedIds": [],
+      "deletedIds": [
+        "q_msq2haqkl55y7x",
+        "q_msq2haqs3zdl0l",
+        "q_msq2harmjg0lw0"
+      ],
       "wrongBooks": [],
       "deletedBankIds": []
     }
