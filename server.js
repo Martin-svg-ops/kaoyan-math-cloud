@@ -926,7 +926,10 @@ function serveStatic(req, res, url) {
       res.writeHead(404); return res.end('not found');
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    // HTML 不缓存：保证部署后浏览器总是拉取最新 index.html（从而拿到新的 app.js?v=N），避免旧版残留
+    if (ext === '.html') headers['Cache-Control'] = 'no-cache';
+    res.writeHead(200, headers);
     fs.createReadStream(filePath).pipe(res);
   });
 }

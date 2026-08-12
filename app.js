@@ -4162,6 +4162,8 @@
     state.banks = d.banks;
     state.bank = d.bank;
     // 云端模式：服务器是题库的唯一权威来源，不再注入本地预置题库
+    // 但图片/PDF 切片题库存于本机 IndexedDB，需在重置 state.banks 后重新合并回来，否则刷新即丢失
+    await loadUserBanksIntoState();
     // 加载云端错题本（合并到本地，云端优先）
     try {
       const wbResp = await API.wrongBooks(auth.token);
