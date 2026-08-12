@@ -764,7 +764,8 @@
       ],
       "deletedIds": [],
       "wrongBooks": [],
-      "phone": ""
+      "phone": "",
+      "deletedBankIds": []
     }
   ],
   "sessions": {
@@ -822,7 +823,8 @@
     "8f53531ed1f3b0c90641f06a9b03e9e361fcd0ab472f494aec85e322b9dd28d7": "u_11_ea8166",
     "ec0a20aa1dc79b3c5e1fe6b04413c32042cd39f78bcc7f2daaa241518f2b5756": "u_11_ea8166",
     "9bf66568fba3638042d3186b201bcf7a4b8deed8d44a5af5f56972b54683a24f": "u_11_ea8166",
-    "481542148343c53eb1549aff46563b4a742ad3dc3375e38530a47669b5f82fe0": "u_18_f94e00"
+    "481542148343c53eb1549aff46563b4a742ad3dc3375e38530a47669b5f82fe0": "u_18_f94e00",
+    "3e2ef1fe6c1e316189c6335452f9220d28cc52e396889c81c2197877a630e07a": "u_11_ea8166"
   },
   "seq": {
     "u": 18,
