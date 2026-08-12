@@ -21,7 +21,8 @@
       "createdAt": "2026-08-11T04:58:06.010Z",
       "added": [],
       "deletedIds": [],
-      "wrongBooks": []
+      "wrongBooks": [],
+      "deletedBankIds": []
     },
     {
       "id": "u_11_ea8166",
@@ -70,7 +71,7 @@
     "36036a23edd022cffca8938ea4a2015a23c6b717824f4359ae88ec34c030f858": "u_10_bfa928",
     "33e43477c7d3e9c54eaeea14fa83cdf6dbd8b716917dd219601c6851b042bc23": "u_11_ea8166",
     "885fb0000c8e835c797a396f14a8396d2348c5d33d8a0f6eeb73e3f99586b36d": "u_11_ea8166",
-    "79f85d39a7b859b6be2cea46155eada7106f12c1ed928c0479730d262a5c109e": "u_10_bfa928"
+    "4287deaa8d75ab9487e9272cacaf9d04721cd265f24b6d9379c51f8924062965": "u_admin"
   },
   "seq": {
     "u": 11,
