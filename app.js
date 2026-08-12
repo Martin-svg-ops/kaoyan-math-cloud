@@ -3780,6 +3780,20 @@
       saveQuestion(btn.dataset.qid || '');
     } else if (action === 'logout') {
       doLogout();
+    } else if (action === 'open-reset') {
+      openResetModal();
+    } else if (action === 'bind-phone') {
+      openBindPhone(false);
+    } else if (action === 'reset-get-code') {
+      handleResetGetCode();
+    } else if (action === 'reset-submit') {
+      handleResetSubmit();
+    } else if (action === 'bind-get-code') {
+      handleBindGetCode();
+    } else if (action === 'bind-submit') {
+      handleBindSubmit();
+    } else if (action === 'bind-skip') {
+      closeModal();
     } else if (action === 'show-login') {
       var lp = document.getElementById('loginPage');
       var aw = document.getElementById('appWrap');
@@ -4120,6 +4134,10 @@
     login: function (u, p) { return this._req('POST', '/api/login', { username: u, password: p }); },
     me: function (token) { return this._req('GET', '/api/me', null, token); },
     logout: function (token) { return this._req('POST', '/api/logout', null, token); },
+    sendResetCode: function (username, phone) { return this._req('POST', '/api/auth/send-reset-code', { username: username, phone: phone }); },
+    resetPassword: function (username, phone, code, newPassword) { return this._req('POST', '/api/auth/reset-password', { username: username, phone: phone, code: code, newPassword: newPassword }); },
+    sendBindCode: function (token, phone) { return this._req('POST', '/api/send-bind-code', { phone: phone }, token); },
+    bindPhone: function (token, phone, code) { return this._req('POST', '/api/bind-phone', { phone: phone, code: code }, token); },
     bank: function (token) { return this._req('GET', '/api/bank', null, token); },
     deleteBank: function (token, bankId) { return this._req('DELETE', '/api/bank/' + encodeURIComponent(bankId), null, token); },
     addQuestion: function (token, q) { return this._req('POST', '/api/questions', q, token); },
@@ -4172,7 +4190,14 @@
       return;
     }
     var role = auth.user && auth.user.isAdmin ? ' <span class="badge badge-blue">管理者</span>' : '';
-    panel.innerHTML = '<div class="sidebar-user-row">' +
+    var phoneRow;
+    if (auth.user.phoneBound) {
+      phoneRow = '<div class="sidebar-user-row"><span class="user-greet">已绑定手机</span><span class="user-phone">' + esc(auth.user.phone) + '</span></div>';
+    } else {
+      phoneRow = '<div class="sidebar-user-row"><span class="user-greet">未绑定手机</span><button class="user-bind" data-action="bind-phone" type="button">去绑定</button></div>';
+    }
+    panel.innerHTML = phoneRow +
+      '<div class="sidebar-user-row">' +
       '<span class="user-greet">当前账号</span>' +
       '<span class="user-name">' + esc(auth.user ? auth.user.username : '') + '</span>' + role +
       '<button class="user-logout" data-action="logout" type="button" title="退出登录">退出</button>' +
@@ -4276,6 +4301,10 @@
       renderUserBadge();
       render();
       toast(loginMode === 'login' ? '欢迎回来，' + r.user.username : '注册成功，已登录为 ' + r.user.username);
+      if (loginMode === 'register') {
+        // 注册成功后建议绑定手机号，便于日后找回密码
+        setTimeout(function () { openBindPhone(true); }, 500);
+      }
     } catch (e) {
       var msg = (e && (typeof e === 'string' ? e : e.message)) || '操作失败';
       if (loginMode === 'register' && /用户名已存在|already exists/i.test(msg)) {
@@ -4304,6 +4333,144 @@
     if (p) p.value = '';
     if (e) e.textContent = '';
     view = 'browse';
+  }
+
+  /* ===================== 找回密码 / 绑定手机号 ===================== */
+  function startSmsCountdown(btn, seconds) {
+    var left = seconds;
+    btn.disabled = true;
+    btn.textContent = left + ' 秒后重发';
+    var timer = setInterval(function () {
+      left--;
+      if (left <= 0) { clearInterval(timer); btn.disabled = false; btn.textContent = '获取验证码'; }
+      else btn.textContent = left + ' 秒后重发';
+    }, 1000);
+  }
+
+  function openResetModal() {
+    openModal(
+      '<div class="modal-head"><h2 class="modal-title">找回密码</h2><button class="btn btn-ghost btn-sm" data-action="close-modal" type="button">' + icon('x', 'icon-sm') + '</button></div>' +
+      '<div class="modal-body auth-modal">' +
+        '<p class="auth-tip">通过绑定手机号验证身份后重置密码。若账号尚未绑定手机，请先用原密码登录，在侧栏「去绑定」完成绑定。</p>' +
+        '<div class="login-field"><label class="login-label">用户名</label><input class="login-input" id="resetUser" type="text" placeholder="请输入用户名" autocomplete="username"></div>' +
+        '<div class="login-field"><label class="login-label">手机号</label><input class="login-input" id="resetPhone" type="tel" placeholder="请输入绑定的手机号" autocomplete="tel" maxlength="11"></div>' +
+        '<div class="login-field"><label class="login-label">短信验证码</label><div class="login-input-row"><input class="login-input" id="resetCode" type="text" placeholder="6 位验证码" inputmode="numeric" maxlength="6"><button class="btn btn-outline" id="resetGetCode" data-action="reset-get-code" type="button">获取验证码</button></div></div>' +
+        '<div class="login-field"><label class="login-label">新密码</label><input class="login-input" id="resetPass" type="password" placeholder="至少 4 位" autocomplete="new-password"></div>' +
+        '<div class="login-error" id="resetError"></div>' +
+      '</div>' +
+      '<div class="modal-foot"><button class="btn" data-action="close-modal" type="button">取消</button><button class="btn btn-primary" data-action="reset-submit" type="button">重置密码</button></div>'
+    );
+  }
+
+  function openBindPhone(suggest) {
+    var tip = suggest
+      ? '<p class="auth-tip">建议绑定手机号：忘记密码时可通过短信验证码找回，账号更安全。</p>'
+      : '<p class="auth-tip">绑定手机号后，可使用短信验证码找回密码。</p>';
+    openModal(
+      '<div class="modal-head"><h2 class="modal-title">绑定手机号</h2><button class="btn btn-ghost btn-sm" data-action="close-modal" type="button">' + icon('x', 'icon-sm') + '</button></div>' +
+      '<div class="modal-body auth-modal">' + tip +
+        '<div class="login-field"><label class="login-label">手机号</label><input class="login-input" id="bindPhone" type="tel" placeholder="请输入手机号" autocomplete="tel" maxlength="11"></div>' +
+        '<div class="login-field"><label class="login-label">短信验证码</label><div class="login-input-row"><input class="login-input" id="bindCode" type="text" placeholder="6 位验证码" inputmode="numeric" maxlength="6"><button class="btn btn-outline" id="bindGetCode" data-action="bind-get-code" type="button">获取验证码</button></div></div>' +
+        '<div class="login-error" id="bindError"></div>' +
+      '</div>' +
+      '<div class="modal-foot"><button class="btn" data-action="' + (suggest ? 'bind-skip' : 'close-modal') + '" type="button">' + (suggest ? '稍后再说' : '取消') + '</button><button class="btn btn-primary" data-action="bind-submit" type="button">绑定</button></div>'
+    );
+  }
+
+  async function handleResetGetCode() {
+    var userEl = document.getElementById('resetUser');
+    var phoneEl = document.getElementById('resetPhone');
+    var err = document.getElementById('resetError');
+    var user = (userEl ? userEl.value : '') || '';
+    var phone = (phoneEl ? phoneEl.value : '') || '';
+    if (err) err.textContent = '';
+    if (user.trim().length < 2) { if (err) err.textContent = '请输入用户名'; return; }
+    if (!/^1[3-9]\d{9}$/.test(phone)) { if (err) err.textContent = '手机号格式不正确'; return; }
+    var btn = document.getElementById('resetGetCode');
+    if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+    try {
+      var r = await API.sendResetCode(user.trim(), phone);
+      if (err) err.textContent = '验证码已发送' + (r.dev ? '（开发模式，验证码：' + r.code + '）' : '');
+      if (btn) startSmsCountdown(btn, 60);
+    } catch (e) {
+      var msg = (e && (typeof e === 'string' ? e : e.message)) || '发送失败';
+      if (err) err.textContent = msg;
+      if (btn) { btn.disabled = false; btn.textContent = '获取验证码'; }
+    }
+  }
+
+  async function handleResetSubmit() {
+    var userEl = document.getElementById('resetUser');
+    var phoneEl = document.getElementById('resetPhone');
+    var codeEl = document.getElementById('resetCode');
+    var passEl = document.getElementById('resetPass');
+    var err = document.getElementById('resetError');
+    var user = (userEl ? userEl.value : '') || '';
+    var phone = (phoneEl ? phoneEl.value : '') || '';
+    var code = (codeEl ? codeEl.value : '') || '';
+    var pass = (passEl ? passEl.value : '') || '';
+    if (err) err.textContent = '';
+    if (pass.length < 4) { if (err) err.textContent = '新密码至少 4 位'; return; }
+    if (code.length < 4) { if (err) err.textContent = '请输入验证码'; return; }
+    var btn = document.querySelector('[data-action="reset-submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = '处理中…'; }
+    try {
+      await API.resetPassword(user.trim(), phone, code, pass);
+      closeModal();
+      toast('密码已重置，请用新密码登录');
+      loginMode = 'login';
+      document.querySelectorAll('.login-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.loginTab === 'login'); });
+      var u = document.getElementById('loginUser'); if (u) u.value = user.trim();
+      var submit = document.getElementById('loginSubmit'); if (submit) submit.textContent = '登 录';
+    } catch (e) {
+      var msg = (e && (typeof e === 'string' ? e : e.message)) || '操作失败';
+      if (err) err.textContent = msg;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '重置密码'; }
+    }
+  }
+
+  async function handleBindGetCode() {
+    var phoneEl = document.getElementById('bindPhone');
+    var err = document.getElementById('bindError');
+    var phone = (phoneEl ? phoneEl.value : '') || '';
+    if (err) err.textContent = '';
+    if (!/^1[3-9]\d{9}$/.test(phone)) { if (err) err.textContent = '手机号格式不正确'; return; }
+    var btn = document.getElementById('bindGetCode');
+    if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+    try {
+      var r = await API.sendBindCode(auth.token, phone);
+      if (err) err.textContent = '验证码已发送' + (r.dev ? '（开发模式，验证码：' + r.code + '）' : '');
+      if (btn) startSmsCountdown(btn, 60);
+    } catch (e) {
+      var msg = (e && (typeof e === 'string' ? e : e.message)) || '发送失败';
+      if (err) err.textContent = msg;
+      if (btn) { btn.disabled = false; btn.textContent = '获取验证码'; }
+    }
+  }
+
+  async function handleBindSubmit() {
+    var phoneEl = document.getElementById('bindPhone');
+    var codeEl = document.getElementById('bindCode');
+    var err = document.getElementById('bindError');
+    var phone = (phoneEl ? phoneEl.value : '') || '';
+    var code = (codeEl ? codeEl.value : '') || '';
+    if (err) err.textContent = '';
+    if (code.length < 4) { if (err) err.textContent = '请输入验证码'; return; }
+    var btn = document.querySelector('[data-action="bind-submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = '处理中…'; }
+    try {
+      var r = await API.bindPhone(auth.token, phone, code);
+      auth.user = r.user;
+      closeModal();
+      renderUserBadge();
+      toast('手机号已绑定');
+    } catch (e) {
+      var msg = (e && (typeof e === 'string' ? e : e.message)) || '操作失败';
+      if (err) err.textContent = msg;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '绑定'; }
+    }
   }
 
   async function apiSaveQuestion(q, qid) {

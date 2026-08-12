@@ -307,6 +307,44 @@ button { cursor: pointer; }
 }
 .sidebar-user .user-logout:hover { color: #fff; background: var(--brand-deep); border-color: var(--brand-deep); }
 .sidebar-user .user-logout:active { transform: scale(.97); }
+.sidebar-user .user-phone { font-size: 12px; color: var(--muted); margin-left: auto; }
+.sidebar-user .user-bind {
+  margin-left: auto;
+  border: 1px solid var(--brand);
+  background: transparent;
+  color: var(--brand);
+  font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 8px; cursor: pointer; transition: all .12s;
+}
+.sidebar-user .user-bind:hover { background: var(--brand); color: #fff; }
+.sidebar-user .user-bind:active { transform: scale(.97); }
+
+/* 登录页：忘记密码入口 */
+.login-form-links { margin-top: 12px; text-align: right; }
+.login-link {
+  color: var(--faint); font-size: 13px; cursor: pointer;
+  background: none; border: none; padding: 2px 0; transition: color .12s;
+}
+.login-link:hover { color: var(--brand); text-decoration: underline; }
+
+/* 找回密码 / 绑定手机号 弹窗 */
+.auth-modal .auth-tip { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
+.auth-modal .login-input-row { display: flex; gap: 8px; align-items: stretch; }
+.auth-modal .login-input-row .login-input { flex: 1; }
+.auth-modal .btn-outline {
+  flex: 0 0 auto; white-space: nowrap;
+  border: 1px solid var(--brand); background: transparent; color: var(--brand);
+  font-size: 13px; font-weight: 600; padding: 0 14px; border-radius: 9px; cursor: pointer; transition: all .12s;
+}
+.auth-modal .btn-outline:hover { background: var(--brand); color: #fff; }
+.auth-modal .btn-outline:disabled { opacity: .55; cursor: not-allowed; }
+.auth-modal .login-error { color: #dc2626; font-size: 13px; min-height: 18px; margin: 6px 2px 0; }
+/* 弹窗在小屏可滚动 */
+.modal-body.auth-modal { max-height: 70vh; overflow-y: auto; }
+@media (max-width: 480px) {
+  .auth-modal .login-input-row { flex-direction: column; }
+  .auth-modal .btn-outline { padding: 11px; }
+}
 
 .storage-note { color: var(--faint); font-size: 11px; line-height: 1.5; margin: 0 4px 8px; }
 

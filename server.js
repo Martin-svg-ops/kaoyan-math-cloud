@@ -136,6 +136,97 @@ function verifyPW(pw, salt, hash) {
 function newToken() { return crypto.randomBytes(32).toString('hex'); }
 function newSeq(prefix) { db.seq[prefix] = (db.seq[prefix] || 0) + 1; return prefix + '_' + db.seq[prefix] + '_' + crypto.randomBytes(3).toString('hex'); }
 
+/* ---------- 短信验证码（腾讯云 SMS，开发模式回传便于测试） ---------- */
+const SMS_TTL = 5 * 60 * 1000;       // 验证码有效期 5 分钟
+const SMS_COOLDOWN = 60 * 1000;      // 同一手机号 60 秒内只能发一次
+const smsStore = new Map();          // phone -> { code, expires, purpose, username?, cooldownUntil }
+function maskPhone(p) {
+  p = String(p || '');
+  if (p.length === 11) return p.slice(0, 3) + '****' + p.slice(7);
+  if (!p) return '';
+  return p.slice(0, 3) + '****' + p.slice(-2);
+}
+function genSmsCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function smsDevMode() { return !process.env.TENCENT_SMS_SECRET_ID; }
+function hmac(key, data, enc) { return crypto.createHmac('sha256', key).update(data).digest(enc || 'binary'); }
+function httpsPostJson(host, headers, body) {
+  return new Promise((resolve) => {
+    const https = require('https');
+    const req = https.request({ host, method: 'POST', path: '/', headers, timeout: 10000 }, (res) => {
+      let d = '';
+      res.on('data', (c) => { d += c; });
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.write(body);
+    req.end();
+  });
+}
+// 腾讯云 SMS SendSms（TC3-HMAC-SHA256 签名，纯 Node 实现，无第三方依赖）
+async function tencentSendSms(phone, code) {
+  const secretId = process.env.TENCENT_SMS_SECRET_ID;
+  const secretKey = process.env.TENCENT_SMS_SECRET_KEY;
+  const sdkAppId = process.env.TENCENT_SMS_SDK_APP_ID;
+  const signName = process.env.TENCENT_SMS_SIGN_NAME;
+  const templateId = process.env.TENCENT_SMS_TEMPLATE_ID;
+  if (!secretId || !secretKey || !sdkAppId || !signName || !templateId) {
+    return '腾讯云短信未完整配置（缺少 TENCENT_SMS_* 环境变量）';
+  }
+  const region = process.env.TENCENT_SMS_REGION || 'ap-guangzhou';
+  const service = 'sms';
+  const host = 'sms.tencentcloudapi.com';
+  const action = 'SendSms';
+  const version = '2021-01-11';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const date = new Date(timestamp * 1000).toISOString().slice(0, 10);
+  const payload = JSON.stringify({
+    PhoneNumberSet: ['+86' + phone],
+    SmsSdkAppId: sdkAppId,
+    SignName: signName,
+    TemplateId: templateId,
+    TemplateParamSet: [code]
+  });
+  const hashedPayload = crypto.createHash('sha256').update(payload).digest('hex');
+  const canonicalHeaders = 'content-type:application/json; charset=utf-8\nhost:' + host + '\n';
+  const signedHeaders = 'content-type;host';
+  const canonicalRequest = ['POST', '/', '', canonicalHeaders, signedHeaders, hashedPayload].join('\n');
+  const credentialScope = date + '/' + service + '/tc3_request';
+  const stringToSign = ['TC3-HMAC-SHA256', String(timestamp), credentialScope, crypto.createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
+  const secretDate = hmac('TC3' + secretKey, date);
+  const secretService = hmac(secretDate, service);
+  const secretSigning = hmac(secretService, 'tc3_request');
+  const signature = hmac(secretSigning, stringToSign, 'hex');
+  const authorization = 'TC3-HMAC-SHA256 Credential=' + secretId + '/' + credentialScope +
+    ', SignedHeaders=' + signedHeaders + ', Signature=' + signature;
+  const headers = {
+    'Authorization': authorization,
+    'Content-Type': 'application/json; charset=utf-8',
+    'Host': host,
+    'X-TC-Action': action,
+    'X-TC-Version': version,
+    'X-TC-Timestamp': String(timestamp),
+    'X-TC-Region': region
+  };
+  const resp = await httpsPostJson(host, headers, payload);
+  if (!resp || !resp.Response) return '腾讯云短信返回异常';
+  if (resp.Response.Error) return '腾讯云短信错误: ' + resp.Response.Error.Code + ' ' + resp.Response.Error.Message;
+  const set = (resp.Response.SendStatusSet || []);
+  if (!set.length) return '腾讯云短信返回异常';
+  const st = set[0];
+  if (st.Code !== 'Ok') return '腾讯云短信发送失败: ' + st.Code + ' ' + (st.Message || '');
+  return null; // 成功
+}
+async function sendSms(phone, code, purpose) {
+  if (smsDevMode()) {
+    console.log('[sms][DEV] 向 ' + phone + ' 发送验证码(' + purpose + '): ' + code);
+    return { dev: true, code: code };
+  }
+  const err = await tencentSendSms(phone, code);
+  if (err) throw new Error(err);
+  return { dev: false };
+}
+
 /* ---------- 种子管理者账号 ---------- */
 function seedAdmin() {
   if (!db.users.some((u) => u.isAdmin)) {
@@ -144,7 +235,7 @@ function seedAdmin() {
     const { salt, hash } = hashPW(pw);
     db.users.push({
       id: 'u_admin', username, salt, hash, isAdmin: true, hasBaseBank: true, createdAt: new Date().toISOString(),
-      added: [], deletedIds: [], wrongBooks: []
+      added: [], deletedIds: [], wrongBooks: [], phone: ''
     });
     saveDB();
     console.log('[server] 已创建管理者账号  用户名: ' + username + '  密码: ' + pw);
@@ -169,8 +260,10 @@ function effectiveBank(user) {
   return base.concat(added);
 }
 function publicUser(u) {
+  const phone = u.phone || '';
   return { id: u.id, username: u.username, isAdmin: !!u.isAdmin, createdAt: u.createdAt,
-    addedCount: (u.added || []).length, deletedCount: (u.deletedIds || []).length };
+    addedCount: (u.added || []).length, deletedCount: (u.deletedIds || []).length,
+    phone: phone ? maskPhone(phone) : '', phoneBound: !!phone };
 }
 
 /* ---------- HTTP 辅助 ---------- */
@@ -389,6 +482,50 @@ async function handleApi(req, res, url) {
     return handleAiClassify(req, res);
   }
 
+  // 找回密码：发送验证码（公开，需用户名与该账号绑定手机号一致）
+  if (p === '/api/auth/send-reset-code' && method === 'POST') {
+    const b = await readBody(req);
+    const username = String(b.username || '').trim();
+    const phone = String(b.phone || '').trim();
+    if (username.length < 2) return sendJSON(res, 400, { error: '请输入用户名' });
+    if (!/^1[3-9]\d{9}$/.test(phone)) return sendJSON(res, 400, { error: '手机号格式不正确' });
+    const user = findUserByName(username);
+    if (!user || user.phone !== phone) return sendJSON(res, 400, { error: '该账号未绑定此手机号，或账号不存在' });
+    const rec = smsStore.get(phone);
+    if (rec && rec.cooldownUntil && Date.now() < rec.cooldownUntil) {
+      return sendJSON(res, 429, { error: '验证码发送过于频繁，请 ' + Math.ceil((rec.cooldownUntil - Date.now()) / 1000) + ' 秒后再试' });
+    }
+    const code = genSmsCode();
+    smsStore.set(phone, { code, expires: Date.now() + SMS_TTL, purpose: 'reset', username, cooldownUntil: Date.now() + SMS_COOLDOWN });
+    try {
+      const r = await sendSms(phone, code, 'reset');
+      return sendJSON(res, 200, { ok: true, dev: !!r.dev, code: r.dev ? r.code : undefined });
+    } catch (e) {
+      return sendJSON(res, 500, { error: '短信发送失败：' + (e.message || e) });
+    }
+  }
+
+  // 找回密码：校验验证码并重置
+  if (p === '/api/auth/reset-password' && method === 'POST') {
+    const b = await readBody(req);
+    const username = String(b.username || '').trim();
+    const phone = String(b.phone || '').trim();
+    const code = String(b.code || '').trim();
+    const newPassword = String(b.newPassword || '');
+    if (newPassword.length < 4) return sendJSON(res, 400, { error: '新密码至少 4 位' });
+    const rec = smsStore.get(phone);
+    if (!rec || rec.purpose !== 'reset' || rec.username !== username) return sendJSON(res, 400, { error: '请先获取验证码' });
+    if (Date.now() > rec.expires) { smsStore.delete(phone); return sendJSON(res, 400, { error: '验证码已过期，请重新获取' }); }
+    if (rec.code !== code) return sendJSON(res, 400, { error: '验证码错误' });
+    const user = findUserByName(username);
+    if (!user || user.phone !== phone) return sendJSON(res, 400, { error: '账号或手机号不匹配' });
+    const hp = hashPW(newPassword);
+    user.salt = hp.salt; user.hash = hp.hash;
+    smsStore.delete(phone);
+    saveDB();
+    return sendJSON(res, 200, { ok: true });
+  }
+
   // 注册
   if (p === '/api/register' && method === 'POST') {
     const b = await readBody(req);
@@ -398,7 +535,7 @@ async function handleApi(req, res, url) {
     if (password.length < 4) return sendJSON(res, 400, { error: '密码至少 4 位' });
     if (findUserByName(username)) return sendJSON(res, 409, { error: '用户名已存在' });
     const { salt, hash } = hashPW(password);
-    const user = { id: newSeq('u'), username, salt, hash, isAdmin: false, hasBaseBank: false, createdAt: new Date().toISOString(), added: [], deletedIds: [], wrongBooks: [] };
+    const user = { id: newSeq('u'), username, salt, hash, isAdmin: false, hasBaseBank: false, createdAt: new Date().toISOString(), added: [], deletedIds: [], wrongBooks: [], phone: '' };
     db.users.push(user);
     saveDB();
     const token = newToken();
@@ -428,6 +565,43 @@ async function handleApi(req, res, url) {
   if (p === '/api/me' && method === 'GET') {
     me.wrongBooks = me.wrongBooks || [];
     return sendJSON(res, 200, { user: publicUser(me), wrongBooks: me.wrongBooks });
+  }
+
+  // 绑定手机号：发送验证码（需登录）
+  if (p === '/api/send-bind-code' && method === 'POST') {
+    const b = await readBody(req);
+    const phone = String(b.phone || '').trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) return sendJSON(res, 400, { error: '手机号格式不正确' });
+    if (db.users.some((u) => u.phone === phone && u.id !== me.id)) return sendJSON(res, 400, { error: '该手机号已被其他账号绑定' });
+    const rec = smsStore.get(phone);
+    if (rec && rec.cooldownUntil && Date.now() < rec.cooldownUntil) {
+      return sendJSON(res, 429, { error: '验证码发送过于频繁，请 ' + Math.ceil((rec.cooldownUntil - Date.now()) / 1000) + ' 秒后再试' });
+    }
+    const code = genSmsCode();
+    smsStore.set(phone, { code, expires: Date.now() + SMS_TTL, purpose: 'bind', cooldownUntil: Date.now() + SMS_COOLDOWN });
+    try {
+      const r = await sendSms(phone, code, 'bind');
+      return sendJSON(res, 200, { ok: true, dev: !!r.dev, code: r.dev ? r.code : undefined });
+    } catch (e) {
+      return sendJSON(res, 500, { error: '短信发送失败：' + (e.message || e) });
+    }
+  }
+
+  // 绑定手机号：校验验证码并绑定（需登录）
+  if (p === '/api/bind-phone' && method === 'POST') {
+    const b = await readBody(req);
+    const phone = String(b.phone || '').trim();
+    const code = String(b.code || '').trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) return sendJSON(res, 400, { error: '手机号格式不正确' });
+    if (db.users.some((u) => u.phone === phone && u.id !== me.id)) return sendJSON(res, 400, { error: '该手机号已被其他账号绑定' });
+    const rec = smsStore.get(phone);
+    if (!rec || rec.purpose !== 'bind') return sendJSON(res, 400, { error: '请先获取验证码' });
+    if (Date.now() > rec.expires) { smsStore.delete(phone); return sendJSON(res, 400, { error: '验证码已过期，请重新获取' }); }
+    if (rec.code !== code) return sendJSON(res, 400, { error: '验证码错误' });
+    me.phone = phone;
+    smsStore.delete(phone);
+    saveDB();
+    return sendJSON(res, 200, { ok: true, user: publicUser(me) });
   }
 
   // 登出
