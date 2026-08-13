@@ -828,9 +828,10 @@ async function handleApi(req, res, url) {
       const idx = (me.added || []).findIndex((q) => q.id === qid);
       if (idx < 0) return sendJSON(res, 403, { error: '基础题库题目不可编辑，可删除后重新添加' });
       const q = sanitizeQuestion(await readBody(req));
-      if (!q.stem) return sendJSON(res, 400, { error: '题干不能为空' });
-      if ((q.type === 'single' || q.type === 'multiple') && q.options.length < 2) return sendJSON(res, 400, { error: '选择题至少需要 2 个选项' });
-      if (!q.answer) return sendJSON(res, 400, { error: '答案不能为空' });
+      const isImg = q.isImage && q.img;
+      if (!q.stem && !isImg) return sendJSON(res, 400, { error: '题干不能为空' });
+      if ((q.type === 'single' || q.type === 'multiple') && q.options.length < 2 && !isImg) return sendJSON(res, 400, { error: '选择题至少需要 2 个选项' });
+      if (!q.answer && !isImg) return sendJSON(res, 400, { error: '答案不能为空' });
       q.id = qid;
       me.added[idx] = q;
       saveDB();

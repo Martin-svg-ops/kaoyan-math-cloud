@@ -1167,6 +1167,7 @@
       selBar.style.cssText = 'margin-top:12px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:10px';
       selBar.innerHTML = '<span style="font-weight:600;color:#60a5fa">已选 ' + selectedCount + ' 题</span>' +
         '<button class="btn btn-primary btn-sm" data-action="add-selected-to-wrong-book" type="button">' + icon('bookmark', 'icon-sm') + '加入错题本</button>' +
+        '<button class="btn btn-sm" data-action="set-bank-type" type="button">' + icon('tag', 'icon-sm') + '批量改题型</button>' +
         '<button class="btn btn-sm" data-action="clear-bank-selection" type="button">取消选择</button>';
       el.appendChild(selBar);
     }
@@ -1236,7 +1237,7 @@
         </div>
         <div class="upload-summary-body">
           ${isImage ? '<div class="hint" style="margin-top:0">PDF 已自动裁切为题目图片，并按考研大纲自动归类到对应模块（章节可在入库后用题库管理的题目编辑调整）。</div>' : ''}
-          ${isPdf ? '<div class="hint" style="margin-top:0">PDF 已自动提取文字并识别题目，入库前请核对题型、选项和答案。</div>' : ''}
+          ${isPdf ? '<div class="hint" style="margin-top:0">PDF 已自动提取文字并识别题目，入库前请核对题型、选项和答案。若 PDF 没有「一、选择题」等分区标题，题目题型默认为解答题，入库后可在题库管理中选中题目用「批量改题型」修正。</div>' : ''}
           <div class="hint" style="margin-top:0;display:flex;align-items:center;gap:10px">
             <input type="checkbox" id="uploadSelAll" data-action="upload-select-all" ${selectedCount === rows.length ? 'checked' : ''} style="margin:0">
             <strong>全选 / 取消全选</strong>
@@ -2103,10 +2104,10 @@
   }
 
   function detectPdfSection(line) {
-    if (/多项选择|不定项选择/.test(line)) return 'multiple';
-    if (/单项选择|单选/.test(line)) return 'single';
-    if (/填空/.test(line)) return 'fill';
-    if (/解答|计算题|证明题|简答/.test(line)) return 'solve';
+    if (/多项选择|不定项选择|多选题|多选/.test(line)) return 'multiple';
+    if (/单项选择|单选题|单选/.test(line)) return 'single';
+    if (/填空题|填空/.test(line)) return 'fill';
+    if (/解答题|解答|计算题|证明题|简答题|综合题|应用题/.test(line)) return 'solve';
     if (/选择/.test(line)) return 'single';
     return null;
   }
@@ -2406,6 +2407,7 @@
     const questions = [];
     const errors = [];
     let autoSplit = false;
+    let lastType = null; // 跨页保持题型：标题在第 1 页、题目延续到后续页时题型不丢失
     for (let p = 1; p <= doc.numPages; p++) {
       if (onProgress) onProgress(p, doc.numPages);
       const page = await doc.getPage(p);
@@ -2419,12 +2421,12 @@
       const wmBands = [];
       boxes.forEach((b) => {
         const sec = detectPdfSection(b.text);
-        if (sec && b.y1 > 30) curType = sec;
+        if (sec && b.y1 > 30) { curType = sec; lastType = sec; }
         if (WATERMARK_KEYS.some((k) => b.text.indexOf(k) >= 0) && b.text.trim().length <= 24) {
           wmBands.push([b.y0, b.y1]);
         }
       });
-      const markers = detectMarkers(boxes).map((m) => ({ num: m.num, y0: m.y0, y1: m.y1, type: curType || 'solve' }));
+      const markers = detectMarkers(boxes).map((m) => ({ num: m.num, y0: m.y0, y1: m.y1, type: curType || lastType || 'solve' }));
       markers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
 
       // 渲染整页到 canvas
@@ -2865,10 +2867,20 @@
         const flush = async () => {
           if (!batch.length) return;
           batchNo++;
-          try {
-            const r = await API.addQuestionsBatch(auth.token, batch);
-            n += (r && typeof r.added === 'number' ? r.added : batch.length);
-          } catch (e) { err += batch.length; console.warn('[云端] 批量上传失败', e); }
+          // 上传失败自动重试（最多 3 次），避免网络抖动/瞬时超限导致整批丢失
+          let ok = false;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const r = await API.addQuestionsBatch(auth.token, batch);
+              n += (r && typeof r.added === 'number' ? r.added : batch.length);
+              ok = true;
+              break;
+            } catch (e) {
+              console.warn('[云端] 批量上传失败(第' + (attempt + 1) + '次)', e);
+              if (attempt < 2) await new Promise((res) => setTimeout(res, 1500));
+            }
+          }
+          if (!ok) err += batch.length;
           batch = []; batchLen = 0;
           toast('云端同步中… ' + Math.min(n + err, qs.length) + '/' + qs.length + ' 道');
         };
@@ -2903,6 +2915,17 @@
       if (!rec) return;
       rec.questions = (rec.questions || []).filter((x) => x.id !== qid);
       if (!rec.questions.length) return idbDeleteBank(bankId).then(() => { imgBankIds.delete(bankId); }).catch(() => {});
+      return idbPutBank(rec);
+    }).catch((e) => console.warn('更新图片题库失败', e));
+  }
+
+  // 修改图片题后，异步同步对应图片题库到 IndexedDB（如批量改题型）
+  function syncImgBankUpdateQuestion(bankId, q) {
+    idbGetBank(bankId).then((rec) => {
+      if (!rec) return;
+      const idx = (rec.questions || []).findIndex((x) => x.id === q.id);
+      if (idx >= 0) rec.questions[idx] = q;
+      else { rec.questions = rec.questions || []; rec.questions.push(q); }
       return idbPutBank(rec);
     }).catch((e) => console.warn('更新图片题库失败', e));
   }
@@ -3645,6 +3668,24 @@
       </div>`);
   }
 
+  // 批量修改题型弹窗（选中题目后统一设置题型）
+  function openBatchTypePicker(qids) {
+    const opts = [['single', '单选题'], ['multiple', '多选题'], ['fill', '填空题'], ['solve', '解答题']];
+    const radios = opts.map(function (o) {
+      return '<label style="display:flex;align-items:center;gap:8px;margin:8px 0;cursor:pointer"><input type="radio" name="btype" value="' + o[0] + '"' + (o[0] === 'single' ? ' checked' : '') + '> ' + o[1] + '</label>';
+    }).join('');
+    openModal(`
+      <div class="modal-head"><h2 class="modal-title">批量修改题型（${qids.length} 题）</h2></div>
+      <div class="modal-body">
+        <div class="hint" style="margin-top:0">将所选 ${qids.length} 道题的题型统一修改为：</div>
+        ${radios}
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-action="close-modal" type="button">取消</button>
+        <button class="btn btn-primary" data-action="set-bank-type-confirm" type="button">确定修改</button>
+      </div>`);
+  }
+
   function toast(msg) {
     const t = $('#toast');
     t.textContent = msg;
@@ -4046,6 +4087,37 @@
       var selQids = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; });
       if (!selQids.length) { toast('请先选择题目'); return; }
       openBatchWrongBookPicker(selQids);
+    } else if (action === 'set-bank-type') {
+      var selQids2 = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; });
+      if (!selQids2.length) { toast('请先选择题目'); return; }
+      openBatchTypePicker(selQids2);
+    } else if (action === 'set-bank-type-confirm') {
+      const radio = document.querySelector('input[name="btype"]:checked');
+      if (!radio) { toast('请选择题型'); return; }
+      const type = radio.value;
+      const qids = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; });
+      closeModal();
+      (async function () {
+        let n = 0, err = 0;
+        toast('正在修改 ' + qids.length + ' 题题型…');
+        for (const qid of qids) {
+          const q = qById(qid);
+          if (!q) continue;
+          const upd = Object.assign({}, q, { type: type, isImage: !!(q.img) });
+          try {
+            if (auth.active) await API.updateQuestion(auth.token, qid, upd);
+            q.type = type;
+            n++;
+          } catch (e) { err++; console.warn('修改题型失败', qid, e); }
+        }
+        qids.forEach(function (qid) {
+          const q = qById(qid);
+          if (q && imgBankIds.has(q.bankId)) syncImgBankUpdateQuestion(q.bankId, q);
+        });
+        saveData();
+        toast(err ? '已修改 ' + n + ' 题，' + err + ' 题失败（网络问题可重试）' : '已修改 ' + n + ' 题题型');
+        render();
+      })();
     } else if (action === 'add-to-wrong-from-bank') {
       openWrongBookPicker(btn.dataset.qid);
     } else if (action === 'clear-bank-selection') {
