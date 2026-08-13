@@ -1129,7 +1129,7 @@
       <div class="section" style="margin-top:14px">
         <div class="page-head" style="margin-bottom:10px">
           <h2 class="section-title" style="margin:0">已删除的题库（可恢复）</h2>
-          <span class="text-small">软删除：题目仍保存在云端，恢复后立即重新显示</span>
+          <span class="text-small">仅基础题库支持软删除（内置共享题，隐藏后可恢复）；自定义题库删除后云端同步删除，不可恢复</span>
         </div>
         <div class="table-wrap"><table class="table" style="min-width:520px">
           <thead><tr><th>题库名称</th><th>题目数</th><th>操作</th></tr></thead>
@@ -3679,7 +3679,7 @@
         render();
       }
     } else if (action === 'delete-bank') {
-      confirmModal('删除题库模块', '将隐藏该题库模块及其全部题目（数据仍保存在云端，可在「已删除的题库」中随时恢复）。试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', btn.dataset.bankid);
+      confirmModal('删除题库模块', '将永久删除该题库及其全部题目（云端同步删除，不可恢复）。试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', btn.dataset.bankid);
     } else if (action === 'delete-bank-confirm') {
       const bankId = btn.dataset.param;
       const doDeleteLocal = function() {

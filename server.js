@@ -716,6 +716,10 @@ async function handleApi(req, res, url) {
         deletedBanks.push({ id: q.bankId, name: q.bankName || q.bankId, count: cnt });
       }
     });
+    // 基础题库被隐藏（软删除）时也列出，便于恢复
+    if (deletedSet.has(BASE.bankMeta.id)) {
+      deletedBanks.push({ id: BASE.bankMeta.id, name: BASE.bankMeta.name, count: BASE.questions.length });
+    }
     return sendJSON(res, 200, {
       banks: banks,
       bank: effectiveBank(me),
@@ -724,22 +728,30 @@ async function handleApi(req, res, url) {
     });
   }
 
-  // 删除整个题库（标记该题库为已删除，移除其中所有题目）
+  // 删除整个题库
+  // 自定义题库：物理删除（云端同步删除该题库全部题目，减小数据库体积，不可恢复）；
+  // 基础题库（bank_880）：软删除（内置共享题，只对当前用户隐藏，可恢复）
   const mBankDel = p.match(/^\/api\/bank\/(.+)$/);
   if (mBankDel && method === 'DELETE') {
     const bankId = decodeURIComponent(mBankDel[1]);
-    me.deletedBankIds = me.deletedBankIds || [];
-    if (!me.deletedBankIds.includes(bankId)) me.deletedBankIds.push(bankId);
-    // 软删除：只标记题库为已删除（effectiveBank 会据此过滤），不再物理清空 me.added。
-    // 此前「删除整个题库」会把用户新增的题连根清空，实例重启/刷新后永久丢失；改为软删除后，
-    // 题仍保留在 added 中，取消删除（从 deletedBankIds 移除该 bankId）即可恢复显示。
     if (bankId === BASE.bankMeta.id) {
-      // 删除基础题库：仅标记所有基础题 ID 为已删除（隐藏，不删 added）
+      // 软删除基础题库：仅标记所有基础题 ID 为已删除（隐藏，不删内置题）
+      me.deletedBankIds = me.deletedBankIds || [];
+      if (!me.deletedBankIds.includes(bankId)) me.deletedBankIds.push(bankId);
       BASE.questions.forEach(q => {
         if (!(me.deletedIds || []).includes(q.id)) {
           me.deletedIds = me.deletedIds || [];
           me.deletedIds.push(q.id);
         }
+      });
+    } else {
+      // 物理删除自定义题库：先从云端移除该题库全部题目
+      const qids = new Set((me.added || []).filter(q => q.bankId === bankId).map(q => q.id));
+      me.added = (me.added || []).filter(q => q.bankId !== bankId);
+      me.deletedBankIds = (me.deletedBankIds || []).filter(id => id !== bankId);
+      // 同步清理错题本中引用该题库题目的记录
+      (me.wrongBooks || []).forEach(wb => {
+        wb.entries = (wb.entries || []).filter(w => !qids.has(w.qid));
       });
     }
     saveDB();
