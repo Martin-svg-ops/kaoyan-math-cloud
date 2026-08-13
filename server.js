@@ -890,10 +890,10 @@ async function handleApi(req, res, url) {
       try {
         const r = await s3Put(key, Buffer.from(m[2], 'base64'), 'image/' + ext);
         if (r.status >= 200 && r.status < 300) out.push({ url: s3PublicBase + key });
-        else { console.warn('[s3] PUT 非 2xx', r.status, r.body.slice(0, 200)); out.push({ url: '' }); }
+        else { console.warn('[s3] PUT 非 2xx', r.status, r.body.slice(0, 200)); out.push({ url: '', error: 'S3 ' + r.status + ': ' + r.body.slice(0, 160) }); }
       } catch (e) {
         console.warn('[s3] 图片上传失败', key, e.message);
-        out.push({ url: '' });
+        out.push({ url: '', error: e.message });
       }
     }
     return sendJSON(res, 200, { images: out });
