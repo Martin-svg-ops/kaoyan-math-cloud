@@ -9,6 +9,7 @@
  * 数据：  ./server-data/db.json（自动创建；含用户、会话、各用户题库增删差异）
  */
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
