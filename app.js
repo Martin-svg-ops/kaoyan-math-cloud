@@ -773,7 +773,9 @@
   }
 
   let state = loadData();
-  loadUserBanksIntoState();
+  // 启动早期不合并本地 IndexedDB 图片题库：
+  // 云端模式登录后由 loadBankFromServer(true) 以云端为权威合并+清理（避免旧题库在登录页/刷新瞬间干扰）；
+  // 本地模式（无后端）由 boot() 在进入应用时合并。
   let view = 'browse';
   let timerHandle = null;
   let toastTimer = null;
@@ -4866,12 +4868,13 @@
       }
       // 无有效 token，保持登录页显示
     } else {
-      // 无后端：隐藏登录页，直接进入本地模式
+      // 无后端：隐藏登录页，直接进入本地模式（合并本地 IndexedDB 图片题库）
       var lp = document.getElementById('loginPage');
       var aw = document.getElementById('appWrap');
       if (lp) lp.style.display = 'none';
       if (aw) aw.style.display = '';
       state.backendOffline = true;
+      await loadUserBanksIntoState();
       renderUserBadge();
       render();
     }
