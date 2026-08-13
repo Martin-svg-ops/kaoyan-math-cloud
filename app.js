@@ -1199,12 +1199,26 @@
     const errs = uploadParsed.errors.length;
     const isPdf = /\.pdf$/i.test(uploadParsed.name || '');
     const isImage = !!uploadParsed.isImage;
+    const rows = uploadParsed.questions;
+    uploadParsed.unsel = uploadParsed.unsel || {};
+    const expanded = !!uploadParsed.expanded;
+    const showCount = 40; // 默认预览前 40 题，可展开全部
+    const visible = expanded ? rows : rows.slice(0, showCount);
+    const selectedCount = rows.length - Object.keys(uploadParsed.unsel).length;
+    const rowHTML = (q, i) => {
+      const checked = !uploadParsed.unsel[i];
+      return `<div class="hint" style="margin-top:0;display:flex;gap:10px;align-items:flex-start">
+        <input type="checkbox" data-action="upload-toggle" data-index="${i}" ${checked ? 'checked' : ''} style="margin-top:8px;flex:0 0 auto">
+        <div style="flex:0 0 96px">${i < showCount ? stemMedia(q, 'q-img q-img-thumb') : '<div class="q-img q-img-thumb" style="display:flex;align-items:center;justify-content:center;color:#999;font-size:11px;line-height:1.2">题<br>' + (i + 1) + '</div>'}</div>
+        <div style="flex:1">${typeBadge(q.type)} <strong>${esc(q.number || ('#' + (i + 1)))}</strong> · ${esc(q.chapter)}</div>
+      </div>`;
+    };
     return `
       <div class="upload-summary">
         <div class="field" style="margin:0 0 12px">
           <label class="field-label" for="uploadBankName">题库名称</label>
           <input class="input" id="uploadBankName" type="text" value="${esc(uploadParsed.bankName || defaultUploadBankName())}" data-upload-bank-name placeholder="例如：高数题库A">
-          <div class="hint" style="margin-top:6px">入库后将成为独立题库模块，同时计入总题库，可在组卷时单独选择。</div>
+          <div class="hint" style="margin-top:6px">入库后将成为独立题库模块，同时计入总题库，可在组卷时单独选择。取消勾选的题目将不入库。</div>
         </div>
         <div class="panel-head"><h2 class="panel-title">${esc(uploadParsed.name)}</h2>
           <span class="badge ${errs ? 'badge-orange' : 'badge-green'}">有效 ${ok} 题${errs ? ' · 跳过 ' + errs + ' 条' : ''}</span>
@@ -1212,12 +1226,19 @@
         <div class="upload-summary-body">
           ${isImage ? '<div class="hint" style="margin-top:0">PDF 已自动裁切为题目图片，并按考研大纲自动归类到对应模块（章节可在入库后用题库管理的题目编辑调整）。</div>' : ''}
           ${isPdf ? '<div class="hint" style="margin-top:0">PDF 已自动提取文字并识别题目，入库前请核对题型、选项和答案。</div>' : ''}
-          ${uploadParsed.questions.slice(0, 8).map((q) => `<div class="hint" style="margin-top:0;display:flex;gap:10px;align-items:flex-start"><div style="flex:0 0 110px">${stemMedia(q, 'q-img q-img-thumb')}</div><div style="flex:1">${typeBadge(q.type)} <strong>${esc(q.number || '')}</strong> · ${esc(q.chapter)}</div></div>`).join('')}
-          ${uploadParsed.questions.length > 5 ? '<div class="hint">…共 ' + uploadParsed.questions.length + ' 道题</div>' : ''}
-          ${isPdf && !uploadParsed.questions.length && uploadParsed.preview ? '<div class="hint" style="max-height:200px;overflow:auto;white-space:pre-wrap">未识别出题目，以下是提取到的文本：\n' + esc(uploadParsed.preview.slice(0, 1600)) + '</div>' : ''}
+          <div class="hint" style="margin-top:0;display:flex;align-items:center;gap:10px">
+            <input type="checkbox" id="uploadSelAll" data-action="upload-select-all" ${selectedCount === rows.length ? 'checked' : ''} style="margin:0">
+            <strong>全选 / 取消全选</strong>
+            <span style="margin-left:auto" id="uploadSelCount">已选 <strong>${selectedCount}</strong> / ${rows.length} 题</span>
+          </div>
+          <div style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px">
+            ${visible.map(rowHTML).join('')}
+          </div>
+          ${!expanded && rows.length > showCount ? '<div class="hint" style="margin-top:8px"><button class="btn btn-sm" data-action="upload-expand" type="button">展开全部 ' + rows.length + ' 题</button><span class="text-small" style="margin-left:8px">（仅预览前 ' + showCount + ' 题，未显示的题目默认已选中）</span></div>' : ''}
+          ${isPdf && !rows.length && uploadParsed.preview ? '<div class="hint" style="max-height:200px;overflow:auto;white-space:pre-wrap">未识别出题目，以下是提取到的文本：\n' + esc(uploadParsed.preview.slice(0, 1600)) + '</div>' : ''}
           ${errs ? '<div class="hint" style="border-color:rgba(220,38,38,.35)">' + uploadParsed.errors.map(esc).join('<br>') + '</div>' : ''}
           <div class="toolbar" style="margin:14px 0 0">
-            <button class="btn btn-primary" data-action="merge-bank" data-mode="append" type="button">${icon('plus')}合并入库</button>
+            <button class="btn btn-primary" data-action="merge-bank" data-mode="append" type="button">${icon('plus')}合并入库（${selectedCount} 题）</button>
             <button class="btn" data-action="merge-bank" data-mode="replace" type="button">替换现有题库</button>
             <button class="btn btn-ghost" data-action="cancel-upload" type="button">取消</button>
           </div>
@@ -1855,7 +1876,7 @@
           toast('所有切图均被 AI 判定为非题目/空白，请关闭 AI 识别后重试，或检查 PDF 排版');
           return;
         }
-        uploadParsed = { name: file.name, questions: res.questions, errors: res.errors, isImage: true, bankName: '' };
+        uploadParsed = { name: file.name, questions: res.questions, errors: res.errors, isImage: true, bankName: '', unsel: {} };
         if (res.autoSplit && res.questions.length) {
           toast('未检测到题号，已按题目间距自动切分为 ' + res.questions.length + ' 题，请检查切分是否准确');
         }
@@ -1898,7 +1919,7 @@
       if (res.error) errors.push(res.error);
       else questions.push(res.q);
     });
-    uploadParsed = { name: file.name, questions: questions, errors: errors, bankName: bankName };
+    uploadParsed = { name: file.name, questions: questions, errors: errors, bankName: bankName, unsel: {} };
     render();
   }
 
@@ -3754,8 +3775,37 @@
       closeModal();
       toast('题目已删除');
       render();
+    } else if (action === 'upload-toggle') {
+      const i = Number(btn.dataset.index);
+      uploadParsed.unsel = uploadParsed.unsel || {};
+      if (uploadParsed.unsel[i]) delete uploadParsed.unsel[i]; else uploadParsed.unsel[i] = true;
+      // 局部更新计数与全选框，避免全页重渲染（图片题列表大）
+      const sel = document.getElementById('uploadSelCount');
+      if (sel) sel.innerHTML = '已选 <strong>' + (uploadParsed.questions.length - Object.keys(uploadParsed.unsel).length) + '</strong> / ' + uploadParsed.questions.length + ' 题';
+      const all = document.getElementById('uploadSelAll');
+      if (all) all.checked = Object.keys(uploadParsed.unsel).length === 0;
+      const mb = document.querySelector('[data-action="merge-bank"][data-mode="append"]');
+      if (mb) mb.textContent = '合并入库（' + (uploadParsed.questions.length - Object.keys(uploadParsed.unsel).length) + ' 题）';
+    } else if (action === 'upload-select-all') {
+      uploadParsed.unsel = uploadParsed.unsel || {};
+      Object.keys(uploadParsed.unsel).forEach((k) => delete uploadParsed.unsel[k]);
+      if (!btn.checked) uploadParsed.questions.forEach((q, i) => { uploadParsed.unsel[i] = true; });
+      render();
+    } else if (action === 'upload-expand') {
+      uploadParsed.expanded = true;
+      render();
     } else if (action === 'merge-bank') {
-      mergeBank(btn.dataset.mode);
+      const unsel = uploadParsed.unsel || {};
+      if (Object.keys(unsel).length) {
+        uploadParsed.questions = uploadParsed.questions.filter((q, i) => !unsel[i]);
+        uploadParsed.unsel = {};
+      }
+      if (!uploadParsed.questions.length) {
+        toast('请至少勾选一题再入库');
+        render();
+      } else {
+        mergeBank(btn.dataset.mode);
+      }
     } else if (action === 'cancel-upload') {
       uploadParsed = null;
       render();
