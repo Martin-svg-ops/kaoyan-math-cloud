@@ -1125,6 +1125,21 @@
           <tbody>${bankListHTML}</tbody>
         </table></div>
       </div>
+      ${(state.deletedBanks || []).length ? `
+      <div class="section" style="margin-top:14px">
+        <div class="page-head" style="margin-bottom:10px">
+          <h2 class="section-title" style="margin:0">已删除的题库（可恢复）</h2>
+          <span class="text-small">软删除：题目仍保存在云端，恢复后立即重新显示</span>
+        </div>
+        <div class="table-wrap"><table class="table" style="min-width:520px">
+          <thead><tr><th>题库名称</th><th>题目数</th><th>操作</th></tr></thead>
+          <tbody>${state.deletedBanks.map(function (b) {
+            return '<tr><td><strong>' + esc(b.name) + '</strong><div class="text-small">已删除</div></td>' +
+              '<td class="num">' + b.count + ' 题</td>' +
+              '<td><button class="btn btn-sm btn-primary" data-action="restore-bank" data-bankid="' + esc(b.id) + '" type="button">' + icon('rotate-ccw', 'icon-sm') + '恢复</button></td></tr>';
+          }).join('')}</tbody>
+        </table></div>
+      </div>` : ''}
       <div class="toolbar">
         <div class="search-wrap">${icon('search')}<input class="input" type="search" placeholder="搜索题干、章节或解析" data-bank-q value="${esc(bankFilter.q)}"></div>
         <select class="select" data-bank-bank style="width:170px"><option value="all">全部题库（总题库）</option>${bankOptions}</select>
@@ -2810,17 +2825,20 @@
     if (auth.active) {
       uploadParsed = null; saveData(); render();
       (async function () {
-        let n = 0, err = 0;
+        let n = 0, err = 0, batchNo = 0;
+        toast('正在同步 ' + qs.length + ' 道图片题到云端（预计 10-60 秒，请勿关闭页面）…');
         // 分批上云：每批按累计体积切（约 45MB），整批只触发一次 git-sync，避免逐题推送累积成几十分钟
         const BATCH_BYTES = 45 * 1024 * 1024;
         let batch = [], batchLen = 0;
         const flush = async () => {
           if (!batch.length) return;
+          batchNo++;
           try {
             const r = await API.addQuestionsBatch(auth.token, batch);
             n += (r && typeof r.added === 'number' ? r.added : batch.length);
           } catch (e) { err += batch.length; console.warn('[云端] 批量上传失败', e); }
           batch = []; batchLen = 0;
+          toast('云端同步中… ' + Math.min(n + err, qs.length) + '/' + qs.length + ' 道');
         };
         for (const q of qs) {
           const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
@@ -2834,7 +2852,7 @@
         await flush();
         await loadBankFromServer();
         if (err === 0) {
-          toast('已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步）');
+          toast('✅ 已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步；云端落库约需 20 秒，请稍候再刷新/换设备）');
         } else {
           toast('⚠️ 已同步 ' + n + ' 道，' + err + ' 道上传失败（检查网络后重新上传该题库）');
         }
@@ -3661,7 +3679,7 @@
         render();
       }
     } else if (action === 'delete-bank') {
-      confirmModal('删除题库模块', '将删除该题库模块及其全部题目，试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', btn.dataset.bankid);
+      confirmModal('删除题库模块', '将隐藏该题库模块及其全部题目（数据仍保存在云端，可在「已删除的题库」中随时恢复）。试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', btn.dataset.bankid);
     } else if (action === 'delete-bank-confirm') {
       const bankId = btn.dataset.param;
       const doDeleteLocal = function() {
@@ -3700,6 +3718,14 @@
       }
       toast('题库模块已删除');
       render();
+    } else if (action === 'restore-bank') {
+      const bankId = btn.dataset.bankid;
+      API.restoreBank(auth.token, bankId).then(function () {
+        toast('题库已恢复');
+        loadBankFromServer();
+      }).catch(function (e) {
+        toast('恢复失败：' + ((e && e.message) || e));
+      });
     } else if (action === 'delete-question') {
       confirmModal('删除题目', '删除后，已组试卷和错题本中的这道题将失效。确定删除吗？', 'delete-question-confirm', btn.dataset.qid);
     } else if (action === 'delete-question-confirm') {
@@ -4200,6 +4226,7 @@
     bindPhone: function (token, phone, code) { return this._req('POST', '/api/bind-phone', { phone: phone, code: code }, token); },
     bank: function (token) { return this._req('GET', '/api/bank', null, token); },
     deleteBank: function (token, bankId) { return this._req('DELETE', '/api/bank/' + encodeURIComponent(bankId), null, token); },
+    restoreBank: function (token, bankId) { return this._req('POST', '/api/bank/' + encodeURIComponent(bankId) + '/restore', null, token); },
     addQuestion: function (token, q) { return this._req('POST', '/api/questions', q, token); },
     addQuestionsBatch: function (token, arr) { return this._req('POST', '/api/questions/batch', { questions: arr }, token); },
     updateQuestion: function (token, id, q) { return this._req('PUT', '/api/questions/' + encodeURIComponent(id), q, token); },
@@ -4218,6 +4245,7 @@
     state.banks = d.banks;
     state.bank = d.bank;
     state.deletedBankIds = d.deletedBankIds || [];
+    state.deletedBanks = d.deletedBanks || [];
     // 云端模式：服务器是题库的唯一权威来源，不再注入本地预置题库
     // 但图片/PDF 切片题库存于本机 IndexedDB，需在重置 state.banks 后重新合并回来，否则刷新即丢失
     await loadUserBanksIntoState();

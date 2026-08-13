@@ -61,8 +61,11 @@ function saveDB() {
 // 关键修复：master 是「移动靶」（部署+多实例并发改写），push 常被 non-fast-forward 拒绝；
 // 因此 push 失败时不放弃，而是拉取远端 db.json、合并（含远端独有的题），再重试推送（最多 3 次）。
 let _gitSyncTimer = null;
+let _gitSyncing = false;   // 当前是否正在推送（防止多批上传时并发 push 互相干扰）
+let _gitSyncAgain = false; // 推送期间有新变更，推送结束后再补一轮（合并最新数据）
 function scheduleGitSync() {
   if (!process.env.GIT_TOKEN) return;
+  if (_gitSyncing) { _gitSyncAgain = true; return; } // 正在推：标记，推完立即补一轮，避免并发 push 被拒后陷入 fetch+merge 重试循环
   if (_gitSyncTimer) clearTimeout(_gitSyncTimer);
   _gitSyncTimer = setTimeout(syncToGit, 500);
 }
@@ -89,39 +92,47 @@ function pullAndMerge() {
 }
 function syncToGit() {
   _gitSyncTimer = null;
+  if (_gitSyncing) { _gitSyncAgain = true; return; }
   if (!process.env.GIT_TOKEN) return;
-  const token = process.env.GIT_TOKEN;
-  const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
-  // 单写者（已停 -lpfl）：日常直接 commit + push，不做预 fetch（避免每次数十秒网络开销）
-  const commitIfChanged = () => {
-    try { execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 }); }
-    catch (_) { return false; }
-    try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); return true; }
-    catch (_) { return false; } // 无变更
-  };
-  if (commitIfChanged()) {
-    try {
-      execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 20000 });
-      console.log('[git-sync] 数据已同步到 GitHub');
-      return;
-    } catch (e) {
-      console.warn('[git-sync] 直接 push 被拒，转入 fetch+merge 重试（防御多写者/部署并发）');
-    }
-  } else {
-    return; // 无本地变更，无需推送
-  }
-  // 仅当 push 被拒（master 移动靶）才拉取远端合并后重试，最多 3 次
-  for (let attempt = 0; attempt < 3; attempt++) {
-    pullAndMerge(); // 本地优先合并远端独有项
+  _gitSyncing = true;
+  try {
+    const token = process.env.GIT_TOKEN;
+    const repo = 'https://Martin-svg-ops:' + token + '@github.com/Martin-svg-ops/kaoyan-math-cloud.git';
+    // 单写者（已停 -lpfl）：日常直接 commit + push，不做预 fetch（避免每次数十秒网络开销）
+    const commitIfChanged = () => {
+      try { execSync('git add server-data/db.json', { cwd: ROOT, timeout: 8000 }); }
+      catch (_) { return false; }
+      try { execSync('git commit -m "data: auto-sync"', { cwd: ROOT, timeout: 8000 }); return true; }
+      catch (_) { return false; } // 无变更
+    };
     if (commitIfChanged()) {
       try {
         execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 20000 });
-        console.log('[git-sync] 数据已同步到 GitHub（merge 后）');
-        return;
-      } catch (_) { console.warn('[git-sync] push 被拒，重试 (' + (attempt + 1) + '/3)'); }
+        console.log('[git-sync] 数据已同步到 GitHub');
+      } catch (e) {
+        console.warn('[git-sync] 直接 push 被拒，转入 fetch+merge 重试（防御多写者/部署并发）');
+        // 仅当 push 被拒（master 移动靶）才拉取远端合并后重试，最多 3 次
+        for (let attempt = 0; attempt < 3; attempt++) {
+          pullAndMerge(); // 本地优先合并远端独有项
+          if (commitIfChanged()) {
+            try {
+              execSync('git push ' + repo + ' HEAD:master 2>&1', { cwd: ROOT, timeout: 20000 });
+              console.log('[git-sync] 数据已同步到 GitHub（merge 后）');
+              break;
+            } catch (_) { console.warn('[git-sync] push 被拒，重试 (' + (attempt + 1) + '/3)'); }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[git-sync] 同步异常：', e.message);
+  } finally {
+    _gitSyncing = false;
+    if (_gitSyncAgain) {
+      _gitSyncAgain = false;
+      setTimeout(syncToGit, 300); // 推送期间有新的数据变更，合并补一轮
     }
   }
-  console.error('[git-sync] 重试 3 次仍失败，本次数据可能未持久化（请检查 GIT_TOKEN / 网络）');
 }
 // 启动时从 Git 拉取并【合并】最新数据（本地优先，避免部署覆盖运行时新增的用户）
 function mergeDBIntoLocal(remote) {
@@ -695,10 +706,21 @@ async function handleApi(req, res, url) {
     });
     const hasBase = me.isAdmin || me.hasBaseBank === true;
     const banks = (hasBase && !deletedSet.has(BASE.bankMeta.id)) ? [{ id: BASE.bankMeta.id, name: BASE.bankMeta.name }, ...customBanks] : [...customBanks];
+    // 已删除但数据仍在的题库（供前端「恢复已删除题库」使用）
+    const deletedBanks = [];
+    const seenDel = new Set();
+    (me.added || []).forEach(q => {
+      if (q.bankId && deletedSet.has(q.bankId) && !seenDel.has(q.bankId)) {
+        seenDel.add(q.bankId);
+        const cnt = (me.added || []).filter(x => x.bankId === q.bankId).length;
+        deletedBanks.push({ id: q.bankId, name: q.bankName || q.bankId, count: cnt });
+      }
+    });
     return sendJSON(res, 200, {
       banks: banks,
       bank: effectiveBank(me),
-      deletedBankIds: me.deletedBankIds || []
+      deletedBankIds: me.deletedBankIds || [],
+      deletedBanks: deletedBanks
     });
   }
 
@@ -719,6 +741,21 @@ async function handleApi(req, res, url) {
           me.deletedIds.push(q.id);
         }
       });
+    }
+    saveDB();
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  // 恢复已删除的题库（软删除反向操作：从 deletedBankIds 移除该 bankId，题目即重新显示）
+  const mBankRestore = p.match(/^\/api\/bank\/(.+)\/restore$/);
+  if (mBankRestore && method === 'POST') {
+    const bankId = decodeURIComponent(mBankRestore[1]);
+    me.deletedBankIds = me.deletedBankIds || [];
+    me.deletedBankIds = me.deletedBankIds.filter(id => id !== bankId);
+    if (bankId === BASE.bankMeta.id) {
+      // 恢复基础题库：同时清除其题目的隐藏标记（deletedIds 中属于基础题的 id）
+      const baseIds = new Set(BASE.questions.map(q => q.id));
+      me.deletedIds = (me.deletedIds || []).filter(id => !baseIds.has(id));
     }
     saveDB();
     return sendJSON(res, 200, { ok: true });
