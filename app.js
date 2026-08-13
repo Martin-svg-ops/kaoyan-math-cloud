@@ -2466,9 +2466,29 @@
           d2.getContext('2d').drawImage(crop, 0, 0, d2.width, d2.height);
           crop = d2;
         }
-        let dataURL;
-        try { dataURL = crop.toDataURL('image/jpeg', 0.85); } catch (e) {
-          try { dataURL = crop.toDataURL(); } catch (e2) { return null; } // 切图失败不产出无图题
+        // 超高图块（多题挤一块/长解答题）先等比限高，防止 canvas 过大导致 toDataURL 编码失败或内存爆
+        if (crop.height > 4200) {
+          const fh = 4200 / crop.height;
+          const d3 = document.createElement('canvas');
+          d3.width = Math.max(1, Math.round(crop.width * fh));
+          d3.height = 4200;
+          d3.getContext('2d').drawImage(crop, 0, 0, d3.width, d3.height);
+          crop = d3;
+        }
+        // 编码：jpeg → 失败降级（缩小后重编）→ 仍失败才放弃（不产出无图题）
+        const encodeCv = (cv, q0) => {
+          try { return cv.toDataURL('image/jpeg', q0); } catch (e) { return null; }
+        };
+        let dataURL = encodeCv(crop, 0.85);
+        if (!dataURL) {
+          try {
+            const f2 = Math.min(1, 700 / crop.width, 2200 / crop.height);
+            const d4 = document.createElement('canvas');
+            d4.width = Math.max(1, Math.round(crop.width * f2));
+            d4.height = Math.max(1, Math.round(crop.height * f2));
+            d4.getContext('2d').drawImage(crop, 0, 0, d4.width, d4.height);
+            dataURL = encodeCv(d4, 0.8);
+          } catch (e) { dataURL = null; }
         }
         if (!dataURL) return null;
         return {
