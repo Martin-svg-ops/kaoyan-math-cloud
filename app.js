@@ -318,8 +318,9 @@
   /* 题目主显示：有原书裁图则用图片（公式 100% 准确），否则回退到公式矢量图 */
   function stemMedia(q, cls) {
     q = q || {};
-    if (q.img) {
-      return '<img class="' + (cls || 'q-img') + '" src="' + esc(q.img) + '" alt="' +
+    const src = q.imgUrl || q.img;
+    if (src) {
+      return '<img class="' + (cls || 'q-img') + '" src="' + esc(src) + '" alt="' +
         esc((q.number || '题目') + ' 原书图片') + '" loading="lazy">';
     }
     return mathHTML(q.stem);
@@ -568,7 +569,7 @@
           { id: 'bank_sample', name: '示例题库', createdAt: now }
         ];
     const bank = (Array.isArray(d && d.bank) ? d.bank : [])
-      .filter((q) => q && q.id && (q.stem || q.img))
+      .filter((q) => q && q.id && (q.stem || q.img || q.imgUrl))
       .map((q) => Object.assign({}, q, { bankId: q.bankId || 'bank_total', chapter: normalizeChapter(q.chapter) }));
     // 错题本迁移：旧版 state.wrong (数组) → 新版 state.wrongBooks
     let wrongBooks = Array.isArray(d && d.wrongBooks) ? d.wrongBooks : [];
@@ -997,7 +998,7 @@
       var expanded = !!browseFilter.expanded[q.id];
       var wrongQids = allWrongQids();
       var inWrong = wrongQids[q.id];
-      var hasImg = !!q.img;
+      var hasImg = !!(q.img || q.imgUrl);
       var shortStem = hasImg ? '' : mathHTML(q.stem);
       var headStemHTML = hasImg ? '' : '<div class="qcard-stem' + (expanded ? '' : ' collapsed') + '">' + shortStem + '</div>';
       var imgWrap = hasImg ? '<div class="qcard-imgwrap">' + stemMedia(q) + '</div>' : '';
@@ -1569,7 +1570,7 @@
       return '<div class="option-list">' + q.options.map((opt, i) => {
         const letter = String.fromCharCode(65 + i);
         const selected = multi ? (ans || '').includes(letter) : ans === letter;
-        const hasImg = !!q.img;
+        const hasImg = !!(q.img || q.imgUrl);
         const optText = hasImg ? '' : `<span>${mathHTML(opt)}</span>`;
         return `<label class="option ${selected ? 'selected' : ''} ${hasImg ? 'option-img' : ''}">
           <input type="${multi ? 'checkbox' : 'radio'}" name="ans_${q.id}" value="${letter}" data-answer-input data-qid="${q.id}" data-kind="${multi ? 'checkbox' : 'radio'}" ${selected ? 'checked' : ''}>
@@ -2888,6 +2889,16 @@
       (async function () {
         let n = 0, err = 0, noImg = 0, batchNo = 0;
         toast('正在同步 ' + qs.length + ' 道图片题到云端（预计 10-60 秒，请勿关闭页面）…');
+        // 先把图片上传到对象存储（S3 兼容 R2/COS），拿到 URL 后再入库 → db.json 只存 URL（KB 级）
+        // 对象存储不可用时降级：仍走 base64 全量入库（旧逻辑）
+        let urls = null;
+        try {
+          const up = await API.uploadImages(auth.token, qs.map((q) => ({ data: q.img })));
+          if (up && Array.isArray(up.images) && up.images.length === qs.length && up.images.every((x) => x.url)) {
+            urls = up.images.map((x) => x.url);
+            toast('图片已上传到对象存储，正在同步题目…');
+          }
+        } catch (e) { urls = null; console.warn('[s3] 对象存储上传失败，走 base64 旧流程', e); }
         // 分批上云：每批按累计体积切（约 45MB），整批只触发一次 git-sync，避免逐题推送累积成几十分钟
         const BATCH_BYTES = 45 * 1024 * 1024;
         let batch = [], batchLen = 0;
@@ -2912,12 +2923,15 @@
           batch = []; batchLen = 0;
           toast('云端同步中… ' + Math.min(n + err, qs.length) + '/' + qs.length + ' 道');
         };
-        for (const q of qs) {
+        for (let qi = 0; qi < qs.length; qi++) {
+          const q = qs[qi];
           const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
-          if (q.img && q.img.length > 600000) { // 大图压缩，减小云端体积并避免超服务端上限
+          if (urls) {
+            payload.imgUrl = urls[qi]; delete payload.img; // 只存对象存储 URL，不再存 base64
+          } else if (q.img && q.img.length > 600000) { // 大图压缩，减小云端体积并避免超服务端上限
             try { payload.img = await downScaleDataUrl(q.img, 1152, 0.65); } catch (e) {}
           }
-          const len = payload.img ? payload.img.length : (payload.stem || '').length;
+          const len = payload.imgUrl ? 128 : (payload.img ? payload.img.length : (payload.stem || '').length);
           if (batchLen + len > BATCH_BYTES && batch.length) await flush();
           batch.push(payload); batchLen += len;
         }
@@ -3446,7 +3460,7 @@
     html += '</div>';
     html += '<div class="q-stem-text">' + stemMedia(q) + '</div>';
     // 有原书裁图时，题目与自带选项已在图片内，导出不再重复列出选项
-    if (q.options && q.options.length && !q.img) {
+    if (q.options && q.options.length && !q.img && !q.imgUrl) {
       html += '<div class="q-options">';
       var labels = 'ABCDEFGH';
       for (var i = 0; i < q.options.length; i++) {
@@ -4134,7 +4148,7 @@
         for (const qid of qids) {
           const q = qById(qid);
           if (!q) continue;
-          const upd = Object.assign({}, q, { type: type, isImage: !!(q.img) });
+          const upd = Object.assign({}, q, { type: type, isImage: !!(q.img || q.imgUrl) });
           try {
             if (auth.active) await API.updateQuestion(auth.token, qid, upd);
             q.type = type;
@@ -4395,6 +4409,7 @@
     restoreBank: function (token, bankId) { return this._req('POST', '/api/bank/' + encodeURIComponent(bankId) + '/restore', null, token); },
     addQuestion: function (token, q) { return this._req('POST', '/api/questions', q, token); },
     addQuestionsBatch: function (token, arr) { return this._req('POST', '/api/questions/batch', { questions: arr }, token); },
+    uploadImages: function (token, images) { return this._req('POST', '/api/images', { images: images }, token); },
     updateQuestion: function (token, id, q) { return this._req('PUT', '/api/questions/' + encodeURIComponent(id), q, token); },
     deleteQuestion: function (token, id) { return this._req('DELETE', '/api/questions/' + encodeURIComponent(id), null, token); },
     adminUsers: function (token) { return this._req('GET', '/api/admin/users', null, token); },
