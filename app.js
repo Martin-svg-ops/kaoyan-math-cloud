@@ -2467,7 +2467,10 @@
           crop = d2;
         }
         let dataURL;
-        try { dataURL = crop.toDataURL('image/jpeg', 0.85); } catch (e) { dataURL = crop.toDataURL(); }
+        try { dataURL = crop.toDataURL('image/jpeg', 0.85); } catch (e) {
+          try { dataURL = crop.toDataURL(); } catch (e2) { return null; } // 切图失败不产出无图题
+        }
+        if (!dataURL) return null;
         return {
           id: uid('q'), bankId: '', number: num,
           type, chapter: classifyChapterByText(qText), difficulty: 3,
@@ -2848,6 +2851,10 @@
       state.banks.push(bank);
     }
     imgBankIds.add(bank.id);
+    // 过滤无图题（切图失败/空图无法做题，跳过并明确提示，避免上云后被服务端静默跳过）
+    const noImgCount = uploadParsed.questions.filter((q) => !q.img).length;
+    uploadParsed.questions = uploadParsed.questions.filter((q) => q.img);
+    if (noImgCount > 0) toast('⚠️ ' + noImgCount + ' 道题切图失败/无图片，已跳过（不入库）');
     const qs = uploadParsed.questions.map((q) => Object.assign({}, q, { bankId: bank.id, isImage: true }));
     state.bank = state.bank.concat(qs);
     try {
@@ -2859,7 +2866,7 @@
     if (auth.active) {
       uploadParsed = null; saveData(); render();
       (async function () {
-        let n = 0, err = 0, batchNo = 0;
+        let n = 0, err = 0, noImg = 0, batchNo = 0;
         toast('正在同步 ' + qs.length + ' 道图片题到云端（预计 10-60 秒，请勿关闭页面）…');
         // 分批上云：每批按累计体积切（约 45MB），整批只触发一次 git-sync，避免逐题推送累积成几十分钟
         const BATCH_BYTES = 45 * 1024 * 1024;
@@ -2873,6 +2880,7 @@
             try {
               const r = await API.addQuestionsBatch(auth.token, batch);
               n += (r && typeof r.added === 'number' ? r.added : batch.length);
+              if (r && typeof r.skippedNoImg === 'number') noImg += r.skippedNoImg;
               ok = true;
               break;
             } catch (e) {
@@ -2895,10 +2903,13 @@
         }
         await flush();
         await loadBankFromServer();
-        if (err === 0) {
+        if (err === 0 && noImg === 0) {
           toast('✅ 已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步；云端落库约需 20 秒，请稍候再刷新/换设备）');
         } else {
-          toast('⚠️ 已同步 ' + n + ' 道，' + err + ' 道上传失败（检查网络后重新上传该题库）');
+          const parts = [];
+          if (err > 0) parts.push(err + ' 道上传失败（网络/大小问题）');
+          if (noImg > 0) parts.push(noImg + ' 道无图片被跳过');
+          toast('⚠️ 已同步 ' + n + ' 道' + (parts.length ? '，' + parts.join('，') : '') + '（可重新上传补齐）');
         }
         render();
       })();

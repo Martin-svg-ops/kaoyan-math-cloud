@@ -795,19 +795,20 @@ async function handleApi(req, res, url) {
     const arr = Array.isArray(b.questions) ? b.questions : [];
     me.added = me.added || [];
     const seen = new Set(me.added.map((x) => x.id));
-    let added = 0, skipped = 0;
+    let added = 0, skipped = 0, skippedNoImg = 0, skippedDup = 0;
     for (const raw of arr) {
-      const q = sanitizeQuestion(raw);
+      let q;
+      try { q = sanitizeQuestion(raw); } catch (e) { skipped++; skippedNoImg++; continue; } // 单题异常不影响整批
       const isImg = q.isImage && q.img;
-      if (!q.stem && !isImg) { skipped++; continue; }
-      if (!q.answer && !isImg) { skipped++; continue; }
-      if ((q.type === 'single' || q.type === 'multiple') && q.options.length < 2) { skipped++; continue; }
+      if (!isImg && !q.stem) { skipped++; skippedNoImg++; continue; }
+      if (!isImg && !q.answer) { skipped++; skippedNoImg++; continue; }
+      if ((q.type === 'single' || q.type === 'multiple') && q.options.length < 2 && !isImg) { skipped++; skippedNoImg++; continue; }
       if (!q.id) q.id = newSeq('uq');
-      if (seen.has(q.id)) { skipped++; continue; }
+      if (seen.has(q.id)) { skipped++; skippedDup++; continue; }
       seen.add(q.id); me.added.push(q); added++;
     }
     if (added > 0) saveDB(); // 关键：整批只 saveDB 一次 → 只 git-sync 一次
-    return sendJSON(res, 200, { added, skipped, total: me.added.length });
+    return sendJSON(res, 200, { added, skipped, skippedNoImg, skippedDup, total: me.added.length });
   }
 
   // 删除题目 / 更新题目
