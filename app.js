@@ -723,11 +723,14 @@
   }
   // 启动时把 IndexedDB 中的图片题库合并回内存 state（刷新后不丢）；
   // 云端模式做镜像对齐：清理云端已删除的题/题库，防止跨设备删除后本地复活
-  async function loadUserBanksIntoState() {
+  // cloudAuth=true 表示当前 state.banks 是云端权威目录（loadBankFromServer 之后）：
+  // 云端目录里没有的本地图片题库 = 已被其他设备删除（物理删除），需清理本地，否则刷新会"复活"
+  async function loadUserBanksIntoState(cloudAuth) {
     try {
       const recs = await idbGetAllBanks();
       if (!recs.length) return;
       const deletedBanks = new Set(state.deletedBankIds || []);
+      const cloudBanks = new Set((state.banks || []).map((b) => b.id)); // 云端题库目录（权威）
       const cloudByBank = {};
       state.bank.forEach((q) => { (cloudByBank[q.bankId] = cloudByBank[q.bankId] || new Set()).add(q.id); });
       for (const rec of recs) {
@@ -735,6 +738,14 @@
         if (deletedBanks.has(rec.id)) {
           try { await idbDeleteBank(rec.id); } catch (e) {}
           imgBankIds.delete(rec.id);
+          continue;
+        }
+        // 云端目录中没有该题库 = 云端已物理删除（其他设备删除）：清理本地，防复活
+        if (cloudAuth && !cloudBanks.has(rec.id)) {
+          try { await idbDeleteBank(rec.id); } catch (e) {}
+          imgBankIds.delete(rec.id);
+          state.bank = state.bank.filter((q) => q.bankId !== rec.id);
+          state.banks = (state.banks || []).filter((b) => b.id !== rec.id);
           continue;
         }
         imgBankIds.add(rec.id);
@@ -3700,7 +3711,9 @@
         render();
       }
     } else if (action === 'delete-bank') {
-      confirmModal('删除题库模块', '将永久删除该题库及其全部题目（云端同步删除，不可恢复）。试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', btn.dataset.bankid);
+      const bid = btn.dataset.bankid;
+      const bank = (state.banks || []).find((b) => b.id === bid);
+      confirmModal('删除题库模块', '将永久删除题库「' + (bank ? bank.name : bid) + '」及其全部题目（云端同步删除，所有设备同步移除，不可恢复）。试卷中引用的题目也会被移除。确定删除吗？', 'delete-bank-confirm', bid);
     } else if (action === 'delete-bank-confirm') {
       const bankId = btn.dataset.param;
       const doDeleteLocal = function() {
@@ -4297,8 +4310,9 @@
     state.deletedBankIds = d.deletedBankIds || [];
     state.deletedBanks = d.deletedBanks || [];
     // 云端模式：服务器是题库的唯一权威来源，不再注入本地预置题库
-    // 但图片/PDF 切片题库存于本机 IndexedDB，需在重置 state.banks 后重新合并回来，否则刷新即丢失
-    await loadUserBanksIntoState();
+    // 但图片/PDF 切片题库存于本机 IndexedDB，需在重置 state.banks 后重新合并回来，否则刷新即丢失；
+    // 传 cloudAuth=true：以云端目录为权威，清理已被其他设备删除（物理删除）的本地图片题库
+    await loadUserBanksIntoState(true);
     // 加载云端错题本（合并到本地，云端优先）
     try {
       const wbResp = await API.wrongBooks(auth.token);
