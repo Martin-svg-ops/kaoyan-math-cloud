@@ -28,6 +28,21 @@ const s3PublicBase = (process.env.S3_PUBLIC_BASE || (s3Endpoint.replace(/\/+$/, 
 const s3Enabled = !!(s3Endpoint && s3AccessKey && s3SecretKey && s3Bucket);
 if (s3Enabled) console.log('[s3] 图片对象存储已启用: bucket=' + s3Bucket + ' endpoint=' + s3Endpoint);
 
+// Supabase 免费项目保活：7 天无 API 请求会暂停（暂停期间图片 404）。
+// Render 实例活跃时，每 6 小时 ping 一次 Supabase auth/health（公开端点，无需认证）。
+// Render 实例休眠时由 GitHub Actions keepalive 工作流定时拉活（见 .github/workflows/keepalive.yml）。
+if (s3Enabled && /supabase\.co/i.test(s3Endpoint)) {
+  const supabaseHost = new URL(s3Endpoint).origin; // 如 https://<ref>.supabase.co
+  const pingSupabase = () => {
+    try {
+      https.get(supabaseHost + '/auth/v1/health', { headers: { 'User-Agent': 'kaoyan-keepalive' } }, (r) => { r.resume(); }).on('error', () => {});
+    } catch (e) { /* 忽略保活失败 */ }
+  };
+  pingSupabase();
+  setInterval(pingSupabase, 6 * 60 * 60 * 1000).unref();
+  console.log('[keepalive] Supabase 保活已启动（每 6 小时 ping）');
+}
+
 // 手写 AWS SigV4 PUT 到 S3 兼容对象存储（无需任何 npm SDK）
 function s3Put(key, bodyBuf, contentType) {
   if (!s3Enabled) return Promise.reject(new Error('对象存储未配置'));
