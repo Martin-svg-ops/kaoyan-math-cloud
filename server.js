@@ -14,26 +14,55 @@ const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
-// 图片对象存储（S3 兼容：Cloudflare R2 / 腾讯云 COS 通用）
+// 图片对象存储（S3 兼容：Cloudflare R2 / 腾讯云 COS / Supabase Storage）
 // 配置 S3_ENDPOINT/S3_ACCESS_KEY/S3_SECRET_KEY/S3_BUCKET 后启用，
-// 图片 base64 不再写入 db.json，只存对象存储 URL → db.json 与 /api/bank 响应从 MB 级降到 KB 级
-// 环境变量示例（R2）：S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com S3_ACCESS_KEY=<R2 Access Key ID> S3_SECRET_KEY=<R2 Secret> S3_BUCKET=kaoyan-images S3_PUBLIC_BASE=https://<pub域>.r2.dev/
-let s3Client = null, s3Enabled = false, s3PublicBase = '';
-try {
-  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-  if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY && process.env.S3_BUCKET && process.env.S3_ENDPOINT) {
-    s3Client = new S3Client({
-      region: process.env.S3_REGION || 'auto',
-      endpoint: process.env.S3_ENDPOINT,
-      forcePathStyle: true,
-      credentials: { accessKeyId: process.env.S3_ACCESS_KEY, secretAccessKey: process.env.S3_SECRET_KEY }
+// 手写 AWS SigV4 签名 PUT（零第三方依赖，避免 npm 包加载问题）
+// 环境变量：S3_ENDPOINT / S3_ACCESS_KEY / S3_SECRET_KEY / S3_BUCKET / S3_PUBLIC_BASE / S3_REGION(默认 auto)
+const s3Bucket = process.env.S3_BUCKET || '';
+const s3Endpoint = process.env.S3_ENDPOINT || '';
+const s3AccessKey = process.env.S3_ACCESS_KEY || '';
+const s3SecretKey = process.env.S3_SECRET_KEY || '';
+const s3Region = process.env.S3_REGION || 'auto';
+const s3PublicBase = (process.env.S3_PUBLIC_BASE || (s3Endpoint.replace(/\/+$/, '') + '/' + s3Bucket + '/')).replace(/\/+$/, '') + '/';
+const s3Enabled = !!(s3Endpoint && s3AccessKey && s3SecretKey && s3Bucket);
+if (s3Enabled) console.log('[s3] 图片对象存储已启用: bucket=' + s3Bucket + ' endpoint=' + s3Endpoint);
+
+// 手写 AWS SigV4 PUT 到 S3 兼容对象存储（无需任何 npm SDK）
+function s3Put(key, bodyBuf, contentType) {
+  if (!s3Enabled) return Promise.reject(new Error('对象存储未配置'));
+  // Supabase S3 端点含 /storage/v1/s3 前缀，必须用完整 pathname 签名
+  const fullPath = '/' + s3Bucket + '/' + key;
+  const url = new URL(s3Endpoint + fullPath);
+  const host = url.hostname;
+  const amzDate = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const service = 's3';
+  const credentialScope = dateStamp + '/' + s3Region + '/' + service + '/aws4_request';
+  const payloadHash = crypto.createHash('sha256').update(bodyBuf).digest('hex');
+  const canonicalHeaders = 'content-length:' + bodyBuf.length + '\n' + 'host:' + host + '\n' + 'x-amz-content-sha256:' + payloadHash + '\n' + 'x-amz-date:' + amzDate + '\n';
+  const signedHeaders = 'content-length;host;x-amz-content-sha256;x-amz-date';
+  // 签名 path 用 endpoint 后的完整 path（Supabase S3: /storage/v1/s3/<bucket>/<key>）
+  const sigPath = s3Endpoint.replace(/^https?:\/\/[^/]+/, '') + fullPath;
+  const canonicalRequest = 'PUT\n' + sigPath + '\n\n' + canonicalHeaders + '\n' + signedHeaders + '\n' + payloadHash;
+  const stringToSign = 'AWS4-HMAC-SHA256\n' + amzDate + '\n' + credentialScope + '\n' + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+  let h = crypto.createHmac('sha256', 'AWS4' + s3SecretKey).update(dateStamp).digest();
+  h = crypto.createHmac('sha256', h).update(s3Region).digest();
+  h = crypto.createHmac('sha256', h).update(service).digest();
+  h = crypto.createHmac('sha256', h).update('aws4_request').digest();
+  const signature = crypto.createHmac('sha256', h).update(stringToSign).digest('hex');
+  const auth = 'AWS4-HMAC-SHA256 Credential=' + s3AccessKey + '/' + credentialScope + ', SignedHeaders=' + signedHeaders + ', Signature=' + signature;
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      method: 'PUT', hostname: url.hostname, port: url.port || 443, path: url.pathname,
+      headers: {
+        'Authorization': auth, 'Content-Type': contentType, 'Content-Length': bodyBuf.length,
+        'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate, 'Host': host
+      }
+    }, (res) => {
+      let d = ''; res.on('data', (c) => d += c); res.on('end', () => resolve({ status: res.statusCode, body: d }));
     });
-    s3Enabled = true;
-    s3PublicBase = process.env.S3_PUBLIC_BASE || (process.env.S3_ENDPOINT.replace(/\/+$/, '') + '/' + process.env.S3_BUCKET + '/');
-    console.log('[s3] 图片对象存储已启用: bucket=' + process.env.S3_BUCKET + ' public=' + s3PublicBase);
-  }
-} catch (e) {
-  console.warn('[s3] S3 SDK 未安装或加载失败，图片对象存储不可用（走旧 base64 存储）');
+    req.on('error', reject); req.write(bodyBuf); req.end();
+  });
 }
 
 const ROOT = __dirname;
@@ -851,7 +880,6 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const imgs = Array.isArray(b.images) ? b.images : [];
     if (!imgs.length) return sendJSON(res, 400, { error: '无图片数据' });
-    const bucket = process.env.S3_BUCKET;
     const out = [];
     for (const it of imgs) {
       const data = String((it && it.data) || '');
@@ -860,10 +888,9 @@ async function handleApi(req, res, url) {
       const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
       const key = (process.env.S3_PREFIX || 'images/') + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
       try {
-        await s3Client.send(new (require('@aws-sdk/client-s3').PutObjectCommand)({
-          Bucket: bucket, Key: key, Body: Buffer.from(m[2], 'base64'), ContentType: 'image/' + ext
-        }));
-        out.push({ url: s3PublicBase + key });
+        const r = await s3Put(key, Buffer.from(m[2], 'base64'), 'image/' + ext);
+        if (r.status >= 200 && r.status < 300) out.push({ url: s3PublicBase + key });
+        else { console.warn('[s3] PUT 非 2xx', r.status, r.body.slice(0, 200)); out.push({ url: '' }); }
       } catch (e) {
         console.warn('[s3] 图片上传失败', key, e.message);
         out.push({ url: '' });
