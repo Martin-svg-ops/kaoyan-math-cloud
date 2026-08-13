@@ -11,6 +11,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 
@@ -353,6 +354,15 @@ const MIME = {
 };
 function sendJSON(res, code, obj) {
   const body = JSON.stringify(obj);
+  // 大 JSON 响应（如 /api/bank 含图片题）启用 gzip，减小传输体积、加快平板拉取
+  if (body.length > 512 * 1024) {
+    try {
+      const gz = zlib.gzipSync(Buffer.from(body));
+      res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Content-Encoding': 'gzip', 'Content-Length': gz.length });
+      res.end(gz);
+      return;
+    } catch (e) { /* 压缩失败则原样返回 */ }
+  }
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
   res.end(body);
 }

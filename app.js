@@ -2821,7 +2821,7 @@
         for (const q of qs) {
           try { await API.addQuestion(auth.token, q); n++; } catch (e) { console.warn('[云端] 导入题目失败', e); }
         }
-        await loadBankFromServer();
+        await loadBankFromServer({ silent: true });
         toast('已导入 ' + n + ' 道题到「' + bankName + '」');
         render();
       })();
@@ -2915,14 +2915,14 @@
         for (const q of qs) {
           const payload = Object.assign({}, q, { bankId: bank.id, bankName: name, isImage: true });
           if (q.img && q.img.length > 600000) { // 大图压缩，减小云端体积并避免超服务端上限
-            try { payload.img = await downScaleDataUrl(q.img, 1280, 0.72); } catch (e) {}
+            try { payload.img = await downScaleDataUrl(q.img, 1152, 0.65); } catch (e) {}
           }
           const len = payload.img ? payload.img.length : (payload.stem || '').length;
           if (batchLen + len > BATCH_BYTES && batch.length) await flush();
           batch.push(payload); batchLen += len;
         }
         await flush();
-        await loadBankFromServer();
+        await loadBankFromServer({ silent: true });
         if (err === 0 && noImg === 0) {
           toast('✅ 已同步 ' + n + '/' + qs.length + ' 道图片题到云端（换设备可同步；云端落库约需 20 秒，请稍候再刷新/换设备）');
         } else {
@@ -3828,7 +3828,7 @@
       const bankId = btn.dataset.bankid;
       API.restoreBank(auth.token, bankId).then(function () {
         toast('题库已恢复');
-        loadBankFromServer();
+        loadBankFromServer({ silent: true });
       }).catch(function (e) {
         toast('恢复失败：' + ((e && e.message) || e));
       });
@@ -4406,8 +4406,18 @@
     deleteWrongBook: function (token, id) { return this._req('DELETE', '/api/wrong-books/' + encodeURIComponent(id), null, token); }
   };
 
-  async function loadBankFromServer() {
-    const d = await API.bank(auth.token);
+  async function loadBankFromServer(opts) {
+    opts = opts || {};
+    if (!opts.silent) toast('正在同步云端题库（题库较大时需 10-60 秒，请勿关闭页面）…');
+    let d;
+    try {
+      d = await API.bank(auth.token);
+    } catch (e) {
+      console.warn('云端题库拉取失败，2 秒后重试', e);
+      if (!opts.silent) toast('云端同步失败，正在重试…');
+      await new Promise((r) => setTimeout(r, 2000));
+      d = await API.bank(auth.token);
+    }
     state.banks = d.banks;
     state.bank = d.bank;
     state.deletedBankIds = d.deletedBankIds || [];
@@ -4427,6 +4437,7 @@
       ensureDefaultWrongBook();
       console.warn('加载云端错题本失败，使用本地数据', e);
     }
+    if (!opts.silent) toast('✅ 云端题库已同步（共 ' + (d.bank || []).length + ' 题）');
   }
 
   function renderUserBadge() {
