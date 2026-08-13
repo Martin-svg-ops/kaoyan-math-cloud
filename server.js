@@ -19,7 +19,7 @@ const { execSync } = require('child_process');
 // 手写 AWS SigV4 签名 PUT（零第三方依赖，避免 npm 包加载问题）
 // 环境变量：S3_ENDPOINT / S3_ACCESS_KEY / S3_SECRET_KEY / S3_BUCKET / S3_PUBLIC_BASE / S3_REGION(默认 auto)
 const s3Bucket = process.env.S3_BUCKET || '';
-const s3Endpoint = process.env.S3_ENDPOINT || '';
+const s3Endpoint = (process.env.S3_ENDPOINT || '').replace(/\/+$/, ''); // 标准化：去尾部斜杠（防双斜杠导致 SigV4 签名失败）
 const s3AccessKey = process.env.S3_ACCESS_KEY || '';
 const s3SecretKey = process.env.S3_SECRET_KEY || '';
 const s3Region = process.env.S3_REGION || 'auto';
