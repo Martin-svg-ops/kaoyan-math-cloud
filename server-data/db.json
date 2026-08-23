@@ -9241,22 +9241,6 @@
           "imgUrl": ""
         },
         {
-          "id": "q_mt5cq9rrnhr8dn",
-          "bankId": "bank_mt5cssgt5h3o24",
-          "bankName": "1000b",
-          "number": "(P1-1)",
-          "type": "solve",
-          "chapter": "PDF导入",
-          "difficulty": 3,
-          "stem": "",
-          "answer": "",
-          "options": [],
-          "analysis": "",
-          "isImage": true,
-          "img": "",
-          "imgUrl": "https://fmmqbyylbppxrbwutlhk.supabase.co/storage/v1/object/public/kaoyan-images/images/mt5csu6g_9zdxhq.jpg"
-        },
-        {
           "id": "q_mt5cq9s794de7i",
           "bankId": "bank_mt5cssgt5h3o24",
           "bankName": "1000b",
@@ -9303,22 +9287,6 @@
           "isImage": true,
           "img": "",
           "imgUrl": "https://fmmqbyylbppxrbwutlhk.supabase.co/storage/v1/object/public/kaoyan-images/images/mt5csvkh_73fi48.jpg"
-        },
-        {
-          "id": "q_mt5cq9sskfirvt",
-          "bankId": "bank_mt5cssgt5h3o24",
-          "bankName": "1000b",
-          "number": "(P1-6)",
-          "type": "solve",
-          "chapter": "PDF导入",
-          "difficulty": 3,
-          "stem": "",
-          "answer": "",
-          "options": [],
-          "analysis": "",
-          "isImage": true,
-          "img": "",
-          "imgUrl": "https://fmmqbyylbppxrbwutlhk.supabase.co/storage/v1/object/public/kaoyan-images/images/mt5csvrq_quiyrm.jpg"
         },
         {
           "id": "q_mt5cq9uc6rf1zs",
