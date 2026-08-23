@@ -798,7 +798,7 @@
     chapters: new Set(CHAPTER_LIST),
     counts: { single: 10, multiple: 0, fill: 6, solve: 6 },
     scores: { single: 5, multiple: 5, fill: 5, solve: 12 },
-    bank: 'all',
+    banks: [], // 组卷题库范围：空数组 = 全部题库；非空 = 仅这些题库
     listBank: 'all',
     diff: 'all',
     q: '',
@@ -1171,6 +1171,7 @@
       selBar.innerHTML = '<span style="font-weight:600;color:#60a5fa">已选 ' + selectedCount + ' 题</span>' +
         '<button class="btn btn-primary btn-sm" data-action="add-selected-to-wrong-book" type="button">' + icon('bookmark', 'icon-sm') + '加入错题本</button>' +
         '<button class="btn btn-sm" data-action="set-bank-type" type="button">' + icon('tag', 'icon-sm') + '批量改题型</button>' +
+        '<button class="btn btn-danger btn-sm" data-action="delete-selected" type="button">' + icon('trash', 'icon-sm') + '批量删除</button>' +
         '<button class="btn btn-sm" data-action="clear-bank-selection" type="button">取消选择</button>';
       el.appendChild(selBar);
     }
@@ -1311,15 +1312,15 @@
       ['mid', '中等（3-4 星）'],
       ['hard', '难题（5 星）']
     ].map(([v, label]) => '<option value="' + v + '"' + (group.diff === v ? ' selected' : '') + '>' + label + '</option>').join('');
-    const bankOptions = ['all'].concat(state.banks).map((b) => {
-      const id = b === 'all' ? 'all' : b.id;
-      const label = b === 'all' ? '全部题库（总题库）' : b.name;
-      return '<option value="' + esc(id) + '"' + (group.bank === id ? ' selected' : '') + '>' + esc(label) + '</option>';
-    }).join('');
     const listBankOptions = ['all'].concat(state.banks).map((b) => {
       const id = b === 'all' ? 'all' : b.id;
       const label = b === 'all' ? '全部题库（总题库）' : b.name;
       return '<option value="' + esc(id) + '"' + (group.listBank === id ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+    // 组卷题库范围：多选 chips（空数组 = 全部题库）
+    const bankChips = [{ id: 'all', name: '全部题库（总题库）' }].concat(state.banks.map((b) => ({ id: b.id, name: b.name }))).map((b) => {
+      const on = b.id === 'all' ? (group.banks.length === 0) : group.banks.includes(b.id);
+      return '<label class="chip ' + (on ? 'checked' : '') + '"><input type="checkbox" data-bank-chip value="' + esc(b.id) + '" ' + (on ? 'checked' : '') + '>' + esc(b.name) + '</label>';
     }).join('');
     const chipHTML = chapters.map((c) => {
       const checked = group.chapters.has(c);
@@ -1339,8 +1340,9 @@
           <button class="btn btn-primary" data-action="auto-pick" type="button">${icon('shuffle')}随机抽题</button>
         </div>
         <div class="panel-body">
-          <div class="field" style="margin-bottom:12px"><label class="field-label" for="groupBank">题库范围</label>
-            <select class="select" id="groupBank" data-group-bank>${bankOptions}</select>
+          <div class="field" style="margin-bottom:12px"><span class="field-label">题库范围（可多选）</span>
+            <div class="chapter-chips" style="margin-top:8px">${bankChips}</div>
+            <div class="hint" style="margin:6px 0 0">默认全部题库；勾选多个题库时，随机抽题与下方题目列表只从所选题库抽取。</div>
           </div>
           <div class="field"><span class="field-label">目标章节</span>
             <div class="chapter-chips">${chipHTML}</div>
@@ -3063,7 +3065,7 @@
     const chapters = group.chapters;
     const candidates = state.bank.filter((q) => {
       if (!chapters.has(q.chapter)) return false;
-      if (group.bank !== 'all' && q.bankId !== group.bank) return false;
+      if (group.banks && group.banks.length && !group.banks.includes(q.bankId)) return false;
       if (!diffOk(q.difficulty, group.diff)) return false;
       if (group.excludeComposed && (state.composeCount[q.id] || 0) > 0) return false;
       return true;
@@ -3821,8 +3823,8 @@
         state.banks = state.banks.filter((b) => b.id !== bankId);
         if (imgBankIds.has(bankId)) { idbDeleteBank(bankId).catch(function () {}); imgBankIds.delete(bankId); }
         if (bankFilter.bank === bankId) bankFilter.bank = 'all';
-        if (group.bank === bankId) group.bank = 'all';
         if (group.listBank === bankId) group.listBank = 'all';
+        group.banks = (group.banks || []).filter((id) => id !== bankId);
         saveData();
         closeModal();
         toast('题库已删除');
@@ -3852,30 +3854,30 @@
       confirmModal('删除题目', '删除后，已组试卷和错题本中的这道题将失效。确定删除吗？', 'delete-question-confirm', btn.dataset.qid);
     } else if (action === 'delete-question-confirm') {
       const qid = btn.dataset.param;
-      if (auth.active) {
-        apiDeleteQuestion(qid).then(function () {
-          state.bank = state.bank.filter((q) => q.id !== qid);
-          (state.wrongBooks || []).forEach(function(wb) {
-            wb.entries = (wb.entries || []).filter(function(w) { return w.qid !== qid; });
-          });
-          state.papers.forEach((p) => { p.qids = (p.qids || []).filter((x) => x !== qid); });
-          closeModal(); toast('题目已删除'); render();
-        }).catch(function (e) { toast('删除失败：' + ((e && e.message) || e)); });
-        return;
-      }
+      closeModal(); // 立即关闭弹窗，界面即时响应
+      const dq = state.bank.find((x) => x.id === qid);
+      // 本地乐观删除（先删界面，云端后台同步）
       state.bank = state.bank.filter((q) => q.id !== qid);
       (state.wrongBooks || []).forEach(function(wb) {
         wb.entries = (wb.entries || []).filter(function(w) { return w.qid !== qid; });
       });
-      state.papers.forEach((p) => {
-        p.qids = (p.qids || []).filter((x) => x !== qid);
-      });
-      const dq = state.bank.find((x) => x.id === qid);
+      state.papers.forEach((p) => { p.qids = (p.qids || []).filter((x) => x !== qid); });
       if (dq && imgBankIds.has(dq.bankId)) syncImgBankDeleteQuestion(dq.bankId, qid);
       saveData();
-      closeModal();
-      toast('题目已删除');
       render();
+      if (auth.active) {
+        toast('正在删除…');
+        (async function () {
+          let ok = false;
+          for (let i = 0; i < 2; i++) {
+            try { await apiDeleteQuestion(qid); ok = true; break; }
+            catch (e) { await new Promise((r) => setTimeout(r, 1200)); }
+          }
+          toast(ok ? '题目已删除' : '云端删除失败：刷新后此题可能恢复，可重新删除');
+        })();
+      } else {
+        toast('题目已删除');
+      }
     } else if (action === 'upload-toggle') {
       const i = Number(btn.dataset.index);
       uploadParsed.unsel = uploadParsed.unsel || {};
@@ -4167,6 +4169,38 @@
       })();
     } else if (action === 'add-to-wrong-from-bank') {
       openWrongBookPicker(btn.dataset.qid);
+    } else if (action === 'delete-selected') {
+      var selDel = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; });
+      if (!selDel.length) { toast('请先选择题目'); return; }
+      confirmModal('批量删除题目', '将删除选中的 ' + selDel.length + ' 道题。删除后，已组试卷和错题本中的这些题将失效。确定删除吗？', 'delete-selected-confirm', '');
+    } else if (action === 'delete-selected-confirm') {
+      const qids = Object.keys(bankSelection).filter(function(k) { return bankSelection[k]; });
+      closeModal(); // 立即关闭，界面即时响应
+      const qidSet = new Set(qids);
+      const removed = state.bank.filter((q) => qidSet.has(q.id));
+      // 本地乐观删除
+      state.bank = state.bank.filter((q) => !qidSet.has(q.id));
+      (state.wrongBooks || []).forEach(function(wb) {
+        wb.entries = (wb.entries || []).filter(function(w) { return !qidSet.has(w.qid); });
+      });
+      state.papers.forEach((p) => { p.qids = (p.qids || []).filter((x) => !qidSet.has(x)); });
+      removed.forEach((dq) => { if (dq && imgBankIds.has(dq.bankId)) syncImgBankDeleteQuestion(dq.bankId, dq.id); });
+      bankSelection = {};
+      saveData();
+      render();
+      if (auth.active) {
+        toast('正在同步删除 ' + qids.length + ' 题…');
+        (async function () {
+          let ok = 0, fail = 0;
+          for (const qid of qids) {
+            try { await apiDeleteQuestion(qid); ok++; }
+            catch (e) { fail++; }
+          }
+          toast(fail ? '已删除 ' + ok + ' 题，' + fail + ' 题云端同步失败（刷新后可能恢复）' : '已删除 ' + ok + ' 题');
+        })();
+      } else {
+        toast('已删除 ' + qids.length + ' 题');
+      }
     } else if (action === 'clear-bank-selection') {
       bankSelection = {};
       render();
@@ -4322,8 +4356,18 @@
       group.duration = t.value;
     } else if (t.matches('[data-group-diff]')) {
       group.diff = t.value;
-    } else if (t.matches('[data-group-bank]')) {
-      group.bank = t.value;
+    } else if (t.matches('[data-bank-chip]')) {
+      const chip = t.closest('.chip');
+      if (t.value === 'all') {
+        // 勾选"全部题库" → 清空限制；取消 → 恢复为全部题库列表（等同全选）
+        group.banks = t.checked ? [] : state.banks.map((b) => b.id);
+      } else if (t.checked) {
+        if (!group.banks.includes(t.value)) group.banks.push(t.value);
+      } else {
+        group.banks = group.banks.filter((id) => id !== t.value);
+      }
+      if (chip) chip.classList.toggle('checked', t.checked);
+      render();
     } else if (t.matches('[data-exclude-composed]')) {
       group.excludeComposed = t.checked;
       renderGroupList();
