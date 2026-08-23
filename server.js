@@ -915,6 +915,34 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { images: out });
   }
 
+  // 管理员专用：把 db.json 中所有历史 base64 图片迁移到对象存储（服务端内存直接迁移，无需下载大文件）
+  // 调用后 db.json 从 MB 级瘦身到 KB 级，/api/bank 秒开
+  if (p === '/api/admin/migrate-images' && method === 'POST') {
+    if (!me || !me.isAdmin) return sendJSON(res, 403, { error: '仅管理员可用' });
+    if (!s3Enabled) return sendJSON(res, 501, { error: '对象存储未配置' });
+    let migrated = 0, failed = 0;
+    const extOf = (dataUrl) => {
+      const m = String(dataUrl).match(/^data:image\/([a-zA-Z0-9]+);/);
+      const e = m ? m[1].toLowerCase() : 'jpg';
+      return e === 'jpeg' ? 'jpg' : e;
+    };
+    for (const u of db.users || []) {
+      for (const q of u.added || []) {
+        if (q.imgUrl || !q.img) continue;
+        const m = String(q.img).match(/^data:image\/[a-zA-Z0-9]+;base64,(.+)$/);
+        if (!m) { failed++; continue; }
+        try {
+          const key = (process.env.S3_PREFIX || 'images/') + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8) + '.' + extOf(q.img);
+          const r = await s3Put(key, Buffer.from(m[1], 'base64'), 'image/' + extOf(q.img));
+          if (r.status >= 200 && r.status < 300) { q.imgUrl = s3PublicBase + key; delete q.img; migrated++; }
+          else { failed++; console.warn('[migrate] PUT 非2xx', r.status, r.body.slice(0, 120)); }
+        } catch (e) { failed++; console.warn('[migrate] 失败', q.id, e.message); }
+      }
+    }
+    if (migrated > 0) saveDB();
+    return sendJSON(res, 200, { migrated, failed, dbSizeMB: (Buffer.byteLength(JSON.stringify(db)) / 1048576).toFixed(2) });
+  }
+
   // 删除题目 / 更新题目
   const mQ = p.match(/^\/api\/questions\/(.+)$/);
   if (mQ && (method === 'DELETE' || method === 'PUT')) {
