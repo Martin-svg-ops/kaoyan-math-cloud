@@ -1887,6 +1887,7 @@
               if (r && (r.isQuestion === false || r.isBlank)) { removed++; return; }
               if (r) {
                 if (!q.number) q.number = r.number || q.number;
+                if (!q.type && r.type) q.type = r.type; // AI 视觉补充题型
               }
               delete q._text; // 清理临时字段
               kept.push(q);

@@ -516,6 +516,11 @@ function localTextClassify(text) {
   if (/^(图|表)\s*\d/.test(t) && t.length < 22) return false;
   if (/^(解|答)[：:。．.\s]/.test(t) || /^(解|答)$/.test(t)) return false;
   if (/^(由|故|因|所以|则|当|代入|可得|综上|因此|显然|易知|即|其|该|此|而|且|于是|从而|又|因为|证毕|证[。．.])/.test(t)) return false;
+  // ── 错题集/解析/标注类噪声（来源行、答案行、独立题号行、章节标题行）──
+  if (/^(来源|出处|题目来源|参考|参考答案|解析|答案|知识点|考点|易错点|说明|提示)[：:]\s*/.test(t)) return false;
+  if (/^第\s*\d+\s*题\s*$/.test(t)) return false;                 // 独立"第4题"题号行
+  if (/^\d{1,2}[、.．]\s*$/.test(t)) return false;                 // 独立数字题号行
+  if (/^[一二三四五六七八九十]+[、.．]\s*\S{0,10}(错题|试题|习题|练习|真题|试卷|专题|卷)\S{0,4}\s*$/.test(t) && t.length < 28) return false; // "一、1000B错题"等标题行
   // ── 确定是题目 ──
   if (cjk >= 8 && t.length >= 20) return true;
   if (/^(求|设|证明|证 |已知|若 |计算|讨论|确定|判断|试 |试求|试证|求极限|求导|求积分|证明:|证明：|设函数|设数列)/.test(t) && cjk >= 4) return true;
@@ -535,9 +540,24 @@ async function classifyBatch(images, model, apiKey) {
   }
   content.push({
     type: 'text',
-    text: `以上${images.length}张图片（编号[1]到[${images.length}]），逐张判断是不是完整数学题目。
-只输出JSON: {"items":[{"i":1,"q":true,"b":false},...]}
-q=true表示是题目，q=false不是题目；b=true是空白/碎片；i对应编号。`
+    text: `以上${images.length}张图片（编号[1]到[${images.length}]），请逐张认真判断。
+
+【"完整数学题目"的判定标准】：
+- 有题干/条件/提问，含公式或文字叙述，例如"设f(x)=…，求…""已知…，证明…""若…，则…""计算…"；
+- 题号行（如"4."、"第4题"）通常是题目的开头部分，算作题目；
+- 即使图片中有公式符号或残缺文字，只要主体是完整题目就判为题目。
+
+【不是题目的情况（务必排除）】：
+- 纯空白、页码、分割线、章节标题（如"一、1000B错题""第二章 导数"）；
+- 答案/解析/解题过程：以"来源："、"解："、"答案："、"解析："、"证："开头，或主要是"由…得""代入…""所以…"等推导语句的内容，不是题目本身；
+- 只有孤立公式片段、没有完整题干或提问的；
+- 单独的题号行、单独的"第N题"。
+
+【输出】严格JSON，不要任何多余文字: {"items":[{"i":1,"q":true,"number":"","type":"solve"},...]}
+- i = 图片编号（必须对应[1]到[${images.length}]）
+- q = true 是完整题目，false 不是
+- number = 题目里的题号数字（如"4"；"第4题"取"4"；没有题号填""）
+- type = 题型：choice选择题/fill填空题/judge判断题/proof证明题/solve解答计算题（无法确定填"solve"）`
   });
 
   const ctrl = new AbortController();
@@ -571,11 +591,14 @@ q=true表示是题目，q=false不是题目；b=true是空白/碎片；i对应�
   const items = parsed.items || [];
   return images.map((im, i) => {
     const item = (items[i] !== undefined) ? items[i] : {};
+    const type = String(item.type || '').trim();
+    const number = String(item.number == null ? '' : item.number).trim();
     return {
       id: im.id,
       isQuestion: item.q !== false,
       isBlank: !!item.b,
-      number: null,
+      number: number || null,
+      type: AI_TYPES.includes(type) ? type : null,
       confidence: 0.5,
       aiBatch: true
     };
