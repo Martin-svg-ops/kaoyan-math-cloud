@@ -2179,7 +2179,7 @@
 
   // 检测题号：支持 (N) / （N） / N. / N、 / N) / 【例 N】 / 习题N / 第N题 / 罗马数字
   // （pdf.js 常把 "(1)" 拆成多个 item，且整行会被合并成巨型 token，故不能仅靠整词正则）
-  function detectMarkers(boxes) {
+  function detectMarkers(boxes, forceSrc) {
     const markers = [];
     const used = new Set();
     const ROMAN = { 'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10 };
@@ -2217,7 +2217,7 @@
         if (m) srcMarkers.push({ num: parseInt(m[1], 10), y0: r.yBot, y1: r.yTop });
       }
     }
-    if (srcMarkers.length >= 2) {
+    if (srcMarkers.length >= 2 || (forceSrc && srcMarkers.length >= 1)) {
       srcMarkers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
       return srcMarkers.map((m) => Object.assign(m, { sourceLine: true }));
     }
@@ -2478,6 +2478,7 @@
     const errors = [];
     let autoSplit = false;
     let lastType = null; // 跨页保持题型：标题在第 1 页、题目延续到后续页时题型不丢失
+    let srcDoc = 0, srcModeOn = false; // 跨页错题集状态：累计来源行数，足够多后强制错题集切分
     for (let p = 1; p <= doc.numPages; p++) {
       if (onProgress) onProgress(p, doc.numPages);
       const page = await doc.getPage(p);
@@ -2496,7 +2497,11 @@
           wmBands.push([b.y0, b.y1]);
         }
       });
-      const markers = detectMarkers(boxes).map((m) => ({ num: m.num, y0: m.y0, y1: m.y1, type: curType || lastType || 'solve' }));
+      const markers0 = detectMarkers(boxes, srcModeOn);
+      const srcN = markers0.filter((m) => m.sourceLine).length;
+      srcDoc += srcN;
+      if (srcDoc >= 10) srcModeOn = true; // 文档级错题集：累计来源行足够多后，所有页强制错题集切分
+      const markers = markers0.map((m) => ({ num: m.num, y0: m.y0, y1: m.y1, type: curType || lastType || 'solve' }));
       markers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
 
       // 渲染整页到 canvas
@@ -2599,6 +2604,18 @@
           const q = doCrop(topY, botY, qText, '(' + num + ')', mk.type);
           if (q) questions.push(q);
         }
+      } else if (srcModeOn) {
+        // 错题集模式但本页无来源行：连续错题页，整页作为一段（题号留空，避免普通聚类多切）
+        let qText = '';
+        boxes.forEach((b) => {
+          if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) {
+            const bt = b.text.trim();
+            if (/^来源/.test(bt.replace(/\s+/g, ''))) return;
+            qText += bt + ' ';
+          }
+        });
+        const q = doCrop(pageH, 0, qText, '', curType || 'solve');
+        if (q) questions.push(q);
       } else {
         // 无题号：先按文本行的垂直空白聚类成“题目块”，再按块裁切；
         // 聚类失败（无文字层/全噪声）才整页兜底，避免把一页多题误当一个题，
