@@ -1884,7 +1884,18 @@
             let removed = 0;
             res.questions.forEach((q) => {
               const r = map[q.id];
-              if (r && (r.isQuestion === false || r.isBlank)) { removed++; return; }
+              if (r && (r.isQuestion === false || r.isBlank)) {
+                // 保守过滤：仅当文本明确是噪音（来源/标题/页码/纯空白/解析）才删，宁留勿删——
+                // 错题/复杂排版 PDF 中 AI 常把真题目误判为非题，此处兜底保护
+                const tt = (q._text || '').trim();
+                const cjk = (tt.match(/[一-龥]/g) || []).length;
+                const clearNoise = !tt || /^[0-9\s]+$/.test(tt) || /^第\s*\d+\s*页/.test(tt) ||
+                  /^(来源|出处|参考答案|解析|答案|知识点|考点|易错点)[：:]\s*/.test(tt) ||
+                  (tt.length < 8 && cjk < 2) ||
+                  (/^[一二三四五六七八九十]+[、.．]\s*\S{0,10}(错题|试题|习题|练习|真题|试卷)/.test(tt) && tt.length < 28);
+                if (clearNoise) { removed++; return; }
+                // 否则保留（AI 拿不准/误判时以保留为准）
+              }
               if (r) {
                 if (!q.number) q.number = r.number || q.number;
                 if (!q.type && r.type) q.type = r.type; // AI 视觉补充题型
@@ -2198,7 +2209,8 @@
       }
       for (const r of srcRows) {
         const t2 = r.text.replace(/\s+/g, ''); // 行内可能因逐字拆分带空格，检测时紧凑化
-        if (!(/来源/.test(t2) || /第\s*\d{1,3}\s*页/.test(t2))) continue;
+        // 来源行格式固定以"来源"或"第N页"开头；行中出现的"见第N页"等引用不算来源行
+        if (!(/^来源/.test(t2) || /^第\s*\d{1,3}\s*页/.test(t2))) continue;
         if (t2.length > 60) continue;
         const m = /第\s*(\d{1,3})\s*题/.exec(t2);
         if (m) srcMarkers.push({ num: parseInt(m[1], 10), y0: r.yBot, y1: r.yTop });
