@@ -2210,10 +2210,15 @@
       }
       for (const r of srcRows) {
         const t2 = r.text.replace(/\s+/g, ''); // 行内可能因逐字拆分带空格，检测时紧凑化
-        // 来源行检测：行内"包含"来源/第N页且含"第N题"（Type3 拆字可能让"来源"不在行首，放宽匹配，宁多勿漏）
-        if (!(/来源/.test(t2) || /^第\s*\d{1,3}\s*页/.test(t2))) continue;
+        // 来源行检测：行首"来源"或"第N页"（减少正文误检），题号可能拆到相邻下一行（跨行补）
+        if (!(/^来源/.test(t2) || /^第\s*\d{1,3}\s*页/.test(t2))) continue;
         if (t2.length > 60) continue;
-        const m = /第\s*(\d{1,3})\s*题/.exec(t2);
+        let m = /第\s*(\d{1,3})\s*题/.exec(t2);
+        if (!m) {
+          // Type3 拆行：题号"第N题"可能在紧邻的下一行（y 差 <10）
+          const nxt = srcRows.find((x) => x !== r && Math.abs(x.yTop - r.yBot) < 10);
+          if (nxt) m = /第\s*(\d{1,3})\s*题/.exec(nxt.text.replace(/\s+/g, ''));
+        }
         if (m) srcMarkers.push({ num: parseInt(m[1], 10), y0: r.yBot, y1: r.yTop });
       }
     }
@@ -2601,6 +2606,11 @@
               }
             }
           });
+          if (srcMode) {
+            // 空白段过滤：段内无实质内容（仅标题/页码/来源行）→ 不产生题目（防"空白也是题目"）
+            const cleanT = qText.trim();
+            if (!cleanT || cleanT.length < 4 || !/[\u4e00-\u9fa5]/.test(cleanT)) continue;
+          }
           const q = doCrop(topY, botY, qText, '(' + num + ')', mk.type);
           if (q) questions.push(q);
         }
