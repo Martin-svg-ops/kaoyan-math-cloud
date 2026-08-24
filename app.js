@@ -2176,23 +2176,33 @@
     // ── 0) 错题集模式预检：来源行（"来源：…第N页，第M题"）是可靠的题尾锚点 ──
     // 页面内若检测到 >=2 个"来源/第N页"行，判定为错题集/带出处标注的试卷：
     // 只用来源行做切分边界（题尾），题号取"第M题"；跳过普通题号检测（公式拆行常造成误判）
+    // 说明：Type3 字体 PDF 的 pdf.js textContent 可能逐字拆分，故先按视觉行聚合文本再检测
     const srcMarkers = [];
-    for (let i = 0; i < boxes.length; i++) {
-      const b = boxes[i];
-      const t = b.text.trim();
-      if (!(/来源/.test(t) || /第\s*\d{1,3}\s*页/.test(t))) continue;
-      if (t.length > 40) continue;
-      let num = null;
-      let m = /第\s*(\d{1,3})\s*题/.exec(t);
-      if (m) num = parseInt(m[1], 10);
-      if (num == null) {
-        // pdf.js 可能把"来源：…第97页，"与"第4题"拆成两个 item：看同行后续 item
-        for (let j = i + 1; j < boxes.length && Math.abs(boxes[j].y1 - b.y1) < 5; j++) {
-          const m2 = /第\s*(\d{1,3})\s*题/.exec(boxes[j].text.trim());
-          if (m2) { num = parseInt(m2[1], 10); i = j; break; }
+    {
+      const rowSorted = boxes.slice().sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0);
+      const rowUsed = new Array(rowSorted.length).fill(false);
+      const srcRows = [];
+      for (let i = 0; i < rowSorted.length; i++) {
+        if (rowUsed[i]) continue;
+        let txt = rowSorted[i].text;
+        let yTop = rowSorted[i].y1, yBot = rowSorted[i].y0;
+        for (let j = i + 1; j < rowSorted.length; j++) {
+          if (!rowUsed[j] && Math.abs(rowSorted[j].y1 - yTop) < 5) {
+            txt += ' ' + rowSorted[j].text;
+            if (rowSorted[j].y1 > yTop) yTop = rowSorted[j].y1;
+            if (rowSorted[j].y0 < yBot) yBot = rowSorted[j].y0;
+            rowUsed[j] = true;
+          }
         }
+        srcRows.push({ text: txt, yTop: yTop, yBot: yBot });
       }
-      if (num != null) srcMarkers.push({ num: num, y0: b.y0, y1: b.y1 });
+      for (const r of srcRows) {
+        const t2 = r.text.replace(/\s+/g, ''); // 行内可能因逐字拆分带空格，检测时紧凑化
+        if (!(/来源/.test(t2) || /第\s*\d{1,3}\s*页/.test(t2))) continue;
+        if (t2.length > 60) continue;
+        const m = /第\s*(\d{1,3})\s*题/.exec(t2);
+        if (m) srcMarkers.push({ num: parseInt(m[1], 10), y0: r.yBot, y1: r.yTop });
+      }
     }
     if (srcMarkers.length >= 2) {
       srcMarkers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
