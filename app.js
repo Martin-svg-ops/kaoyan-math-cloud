@@ -1886,8 +1886,9 @@
               const r = map[q.id];
               if (r && (r.isQuestion === false || r.isBlank)) {
                 // 保守过滤：仅当文本明确是噪音（来源/标题/页码/纯空白/解析）才删，宁留勿删——
-                // 错题/复杂排版 PDF 中 AI 常把真题目误判为非题，此处兜底保护
-                const tt = (q._text || '').trim();
+                // 错题/复杂排版 PDF 中 AI 常把真题目误判为非题，此处兜底保护；
+                // 先剔除"来源：…第N题"片段（它是题尾标注，不是噪音）
+                const tt = (q._text || '').replace(/来源[：:][^\n]{0,60}第\s*\d+\s*题/g, ' ').trim();
                 const cjk = (tt.match(/[一-龥]/g) || []).length;
                 const clearNoise = !tt || /^[0-9\s]+$/.test(tt) || /^第\s*\d+\s*页/.test(tt) ||
                   /^(来源|出处|参考答案|解析|答案|知识点|考点|易错点)[：:]\s*/.test(tt) ||
@@ -2587,7 +2588,12 @@
           let qText = '';
           boxes.forEach((b) => {
             if (b.y1 <= topY + 3 && b.y0 >= botY - 3) {
-              if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) qText += b.text + ' ';
+              if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) {
+                const bt = b.text.trim();
+                // 错题集模式：来源行（段顶部的上一题出处）不进入题目文本，避免被当噪音/污染 AI 分类
+                if (srcMode && /^来源/.test(bt.replace(/\s+/g, ''))) return;
+                qText += bt + ' ';
+              }
             }
           });
           const q = doCrop(topY, botY, qText, '(' + num + ')', mk.type);
