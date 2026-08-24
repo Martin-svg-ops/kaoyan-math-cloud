@@ -2172,6 +2172,33 @@
     const used = new Set();
     const ROMAN = { 'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10 };
     const push = (num, b, extra) => markers.push(Object.assign({ num, y0: b.y0, y1: b.y1 }, extra || {}));
+
+    // ── 0) 错题集模式预检：来源行（"来源：…第N页，第M题"）是可靠的题尾锚点 ──
+    // 页面内若检测到 >=2 个"来源/第N页"行，判定为错题集/带出处标注的试卷：
+    // 只用来源行做切分边界（题尾），题号取"第M题"；跳过普通题号检测（公式拆行常造成误判）
+    const srcMarkers = [];
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      const t = b.text.trim();
+      if (!(/来源/.test(t) || /第\s*\d{1,3}\s*页/.test(t))) continue;
+      if (t.length > 40) continue;
+      let num = null;
+      let m = /第\s*(\d{1,3})\s*题/.exec(t);
+      if (m) num = parseInt(m[1], 10);
+      if (num == null) {
+        // pdf.js 可能把"来源：…第97页，"与"第4题"拆成两个 item：看同行后续 item
+        for (let j = i + 1; j < boxes.length && Math.abs(boxes[j].y1 - b.y1) < 5; j++) {
+          const m2 = /第\s*(\d{1,3})\s*题/.exec(boxes[j].text.trim());
+          if (m2) { num = parseInt(m2[1], 10); i = j; break; }
+        }
+      }
+      if (num != null) srcMarkers.push({ num: num, y0: b.y0, y1: b.y1 });
+    }
+    if (srcMarkers.length >= 2) {
+      srcMarkers.sort((a, b) => b.y1 - a.y1); // 阅读顺序：上→下
+      return srcMarkers.map((m) => Object.assign(m, { sourceLine: true }));
+    }
+
     // 第一遍：(N) / （N） / 罗马数字题号
     for (let i = 0; i < boxes.length; i++) {
       if (used.has(i)) continue;
@@ -2520,19 +2547,28 @@
       };
 
       if (markers.length) {
+        const srcMode = markers[0].sourceLine === true; // 错题集模式：来源行是题尾
         for (let k = 0; k < markers.length; k++) {
           const mk = markers[k];
-          // 首题向上延伸到页面顶（保留章节标题等上方内容）；其余题号上移 vpad
-          const topY = (k === 0) ? pageH : Math.min(pageH, mk.y1 + vpad);
-          const botY = (k + 1 < markers.length) ? Math.max(0, markers[k + 1].y1 - vpad) : 0;
+          let topY, botY, num;
+          if (srcMode) {
+            // 来源行是题尾：本题 = [上一个来源行底部, 本来源行底部上方]（首题向上到页顶含标题）
+            topY = (k === 0) ? pageH : markers[k - 1].y0;
+            botY = Math.max(0, mk.y0 - vpad);
+            num = mk.num;
+          } else {
+            // 普通题号是题首：本题 = [题号行顶部, 下一题号行顶部]
+            topY = (k === 0) ? pageH : Math.min(pageH, mk.y1 + vpad);
+            botY = (k + 1 < markers.length) ? Math.max(0, markers[k + 1].y1 - vpad) : 0;
+            num = mk.num;
+          }
           let qText = '';
-          const nb = (k + 1 < markers.length) ? markers[k + 1].y1 : 0;
           boxes.forEach((b) => {
-            if (b.y1 <= mk.y1 + 3 && b.y0 >= nb - 3) {
+            if (b.y1 <= topY + 3 && b.y0 >= botY - 3) {
               if (!WATERMARK_KEYS.some((k2) => b.text.indexOf(k2) >= 0) && b.text.trim()) qText += b.text + ' ';
             }
           });
-          const q = doCrop(topY, botY, qText, '(' + mk.num + ')', mk.type);
+          const q = doCrop(topY, botY, qText, '(' + num + ')', mk.type);
           if (q) questions.push(q);
         }
       } else {
