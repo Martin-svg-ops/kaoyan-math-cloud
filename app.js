@@ -1262,6 +1262,18 @@
       </div>`;
   }
 
+  // 题目组卷信息：次数 / 最近日期 / 第几套（基于已组试卷实时计算，跨设备一致）
+  function composedInfo(qid) {
+    const all = (state.papers || []).slice().sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+    const mine = all.filter((p) => (p.qids || []).includes(qid));
+    if (!mine.length) return null;
+    const latest = mine[0];
+    const idx = all.findIndex((p) => p.id === latest.id);
+    let date = '';
+    try { date = new Date(latest.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }); } catch (e) {}
+    return { count: mine.length, date: date, num: idx >= 0 ? idx + 1 : '' };
+  }
+
   function renderBankList() {
     const list = filterBank();
     const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
@@ -1275,9 +1287,10 @@
     }
     box.innerHTML = `
       <div class="table-wrap"><table class="table">
-        <thead><tr><th style="width:36px"><input type="checkbox" data-action="bank-select-all" title="全选/取消全选"></th><th style="width:42%">题干</th><th>章节</th><th>题型</th><th>难度</th><th style="width:120px">操作</th></tr></thead>
+        <thead><tr><th style="width:36px"><input type="checkbox" data-action="bank-select-all" title="全选/取消全选"></th><th style="width:38%">题干</th><th>章节</th><th>题型</th><th>难度</th><th style="width:130px">组卷</th><th style="width:120px">操作</th></tr></thead>
         <tbody>${rows.map((q) => {
           var checked = !!bankSelection[q.id];
+          var ci = composedInfo(q.id);
           return `
           <tr class="${checked ? 'row-selected' : ''}">
             <td><input type="checkbox" data-action="bank-select-one" data-qid="${esc(q.id)}" ${checked ? 'checked' : ''}></td>
@@ -1285,6 +1298,7 @@
             <td><div>${esc(bankNameById(q.bankId))}</div><div class="text-small">${esc(q.chapter)}</div></td>
             <td>${typeBadge(q.type)}</td>
             <td><span class="difficulty">${stars(q.difficulty)}</span></td>
+            <td>${ci ? '<div class="text-small" style="color:#8b5cf6;line-height:1.5">组卷 ' + ci.count + ' 次<br>' + esc(ci.date) + ' · 第 ' + ci.num + ' 套</div>' : '<span class="text-muted">—</span>'}</td>
             <td><div class="q-actions">
               <button class="btn btn-sm" data-action="edit-question" data-qid="${esc(q.id)}" type="button">${icon('pencil', 'icon-sm')}编辑</button>
               <button class="btn btn-sm" data-action="add-to-wrong-from-bank" data-qid="${esc(q.id)}" type="button">${icon('bookmark', 'icon-sm')}错题本</button>
