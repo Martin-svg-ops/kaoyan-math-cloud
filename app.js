@@ -2199,7 +2199,7 @@
         let txt = rowSorted[i].text;
         let yTop = rowSorted[i].y1, yBot = rowSorted[i].y0;
         for (let j = i + 1; j < rowSorted.length; j++) {
-          if (!rowUsed[j] && Math.abs(rowSorted[j].y1 - yTop) < 5) {
+          if (!rowUsed[j] && Math.abs(rowSorted[j].y1 - yTop) < 6) {
             txt += ' ' + rowSorted[j].text;
             if (rowSorted[j].y1 > yTop) yTop = rowSorted[j].y1;
             if (rowSorted[j].y0 < yBot) yBot = rowSorted[j].y0;
@@ -2210,8 +2210,8 @@
       }
       for (const r of srcRows) {
         const t2 = r.text.replace(/\s+/g, ''); // 行内可能因逐字拆分带空格，检测时紧凑化
-        // 来源行格式固定以"来源"或"第N页"开头；行中出现的"见第N页"等引用不算来源行
-        if (!(/^来源/.test(t2) || /^第\s*\d{1,3}\s*页/.test(t2))) continue;
+        // 来源行检测：行内"包含"来源/第N页且含"第N题"（Type3 拆字可能让"来源"不在行首，放宽匹配，宁多勿漏）
+        if (!(/来源/.test(t2) || /^第\s*\d{1,3}\s*页/.test(t2))) continue;
         if (t2.length > 60) continue;
         const m = /第\s*(\d{1,3})\s*题/.exec(t2);
         if (m) srcMarkers.push({ num: parseInt(m[1], 10), y0: r.yBot, y1: r.yTop });
